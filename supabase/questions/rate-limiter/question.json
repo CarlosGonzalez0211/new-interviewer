@@ -1,0 +1,67 @@
+{
+  "title": "API Rate Limiter",
+  "language": "python",
+  "prompt": "Your team's API gateway uses a small in-memory rate limiter to stop clients from hammering the service. Support keeps getting tickets: some customers are blocked for longer than expected, some are let through when they should not be, and the \"retry in N seconds\" hint they show makes no sense.\n\nThe limiter is a sliding window: for each key (for example an API token), at most `limit` units may be spent within any window of `window` seconds. It takes a clock function so it can be tested without sleeping.\n\n- allow(key, cost=1) tries to spend `cost` units and returns True or False.\n- remaining(key) tells how many units are left right now.\n- retry_after(key) tells how many seconds until another unit would be allowed.\n\nStart by explaining how you would design this and what edge cases worry you, then investigate the code and tests, fix what is broken, and walk us through your reasoning as you go.",
+  "constraints": "- Sliding window log: a unit spent at time t counts against the limit for times in [t, t + window). At exactly t + window it no longer counts.\n- Only allowed requests are recorded. A rejected request never consumes capacity and never extends how long the caller is blocked.\n- allow(key, cost) is all-or-nothing: it spends exactly `cost` units or none. A cost larger than the limit is never allowed. cost below 1 raises ValueError.\n- Each key has its own independent window, and each RateLimiter instance has its own state; limiters must not share anything.\n- retry_after(key) returns 0.0 if a single unit would be allowed now, otherwise the number of seconds from now until the oldest live unit expires (a relative duration, not a timestamp).\n- The clock is injectable (defaults to time.monotonic). Keep the public interface unchanged.",
+  "checklist": [
+    "Asks what a boundary means (is a request exactly one window old still counted?) before coding.",
+    "Considers state questions up front: per-key vs per-instance, what happens on rejection, cleanup of old data.",
+    "Reads and runs the tests first; uses the injected clock rather than sleeping.",
+    "Traces a small scenario by hand on paper or in a REPL (timestamps and the deque) to find the problem.",
+    "Spots that shared state is a class attribute, not an instance attribute, and explains the consequences.",
+    "Fixes one bug at a time and re-runs; does not rewrite the whole class.",
+    "Uses the AI assistant critically and verifies its claims against the written constraints.",
+    "Mentions production concerns: thread-safety, memory growth for many keys, distributed limiting."
+  ],
+  "followups": [
+    "How would you make this safe to call from multiple threads?",
+    "What is the memory cost per key and how would you bound it?",
+    "What would change to support a token bucket instead of a sliding window log?",
+    "How would you design this to work across several server processes?",
+    "Which of these bugs would be hardest to notice in production, and why?"
+  ],
+  "rubric": [
+    { "id": "debugging", "label": "Debugging method (reproduces, localizes, verifies)", "weight": 3 },
+    { "id": "correctness", "label": "Correctness of fixes (all bugs, no regressions)", "weight": 3 },
+    { "id": "state", "label": "Reasoning about state and time boundaries", "weight": 2 },
+    { "id": "ai_use", "label": "Uses the AI assistant critically", "weight": 2 },
+    { "id": "communication", "label": "Explains reasoning clearly while working", "weight": 2 }
+  ],
+  "bugs": [
+    {
+      "title": "Window boundary is inclusive",
+      "description": "Expired hits are pruned with a strict < comparison, so a request exactly one window old still counts and the caller is blocked for one extra instant.",
+      "file_path": "limiter.py",
+      "hint": "What happens to a request made exactly `window` seconds ago?",
+      "caught_by": ["test_window_edge_is_exclusive"]
+    },
+    {
+      "title": "Rejected requests are recorded",
+      "description": "allow appends the timestamp before checking the limit, so rejected requests consume capacity and keep a hammering client blocked indefinitely.",
+      "file_path": "limiter.py",
+      "hint": "Keep calling allow while blocked, then wait for the original requests to expire.",
+      "caught_by": ["test_rejected_requests_do_not_count"]
+    },
+    {
+      "title": "State shared across instances",
+      "description": "_hits is a class attribute instead of being created in __init__, so every RateLimiter instance (and every test) shares one dictionary.",
+      "file_path": "limiter.py",
+      "hint": "Create two limiters and use the same key on both.",
+      "caught_by": ["test_instances_do_not_share_state"]
+    },
+    {
+      "title": "Cost is ignored",
+      "description": "allow accepts `cost` but only records a single unit and never checks the whole cost against the remaining capacity, so expensive calls are undercounted.",
+      "file_path": "limiter.py",
+      "hint": "Spend a cost of 3 and check remaining().",
+      "caught_by": ["test_cost_consumes_that_many_units", "test_cost_larger_than_limit_is_never_allowed"]
+    },
+    {
+      "title": "retry_after returns a timestamp",
+      "description": "retry_after returns the absolute expiry time (oldest + window) instead of the seconds remaining from now.",
+      "file_path": "limiter.py",
+      "hint": "Check retry_after when the clock is not at zero.",
+      "caught_by": ["test_retry_after"]
+    }
+  ]
+}

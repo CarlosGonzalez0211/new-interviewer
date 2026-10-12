@@ -1,0 +1,67 @@
+{
+  "title": "Potluck Raffle",
+  "language": "python",
+  "prompt": "Your office potluck runs a small raffle to raise money for the cleanup crew. A teammate wrote a tiny Python module for it and says it \"basically works\", but the organizers have already spotted a few strange results.\n\nHow the raffle is supposed to work:\n\n- Anyone can buy tickets from a Raffle object by name. Every ticket costs the same fixed price.\n- Each ticket gets a number, and every ticket knows who owns it.\n- When the sales are closed, one sold ticket is drawn as the winner. The draw is reproducible: a Raffle is created with an optional seed and uses its own random.Random(seed).\n- The winner takes the prize pool, which is the total sales minus the organizer fee.\n\nYou have the code (raffle.py, pricing.py) and a test suite. Start by explaining how you would implement this yourself and what could go wrong, then figure out what is actually broken, fix it, and explain your reasoning as you go.",
+  "constraints": "- A ticket costs $2.50. All money amounts are integers in cents, never floats.\n- One person can hold at most 5 tickets in total across all of their purchases. Names are matched ignoring case and extra spaces (\"Ana\" and \" ana \" are the same person). A purchase that would take someone over the limit raises ValueError and sells nothing; so does a quantity below 1.\n- Ticket numbers are global: they start at 1 and increase by one in the order tickets are sold, across all buyers.\n- The organizer fee is 15% of total sales, rounded down to a whole cent. Prize pool = total sales - fee.\n- The winner is one sold ticket chosen uniformly: tickets[rng.randrange(len(tickets))] using the raffle's own random.Random. If no tickets were sold there is no winner (draw_winner returns None).\n- Keep the public interface (Raffle.buy_tickets, tickets_owned, total_sales, prize_pool, draw_winner) unchanged.",
+  "checklist": [
+    "Asks clarifying questions about the rules (limit, ticket numbering, fee rounding, empty raffle) before touching the code.",
+    "Describes how they would implement it from scratch before reading the code, and mentions edge cases (limits, zero tickets, rounding).",
+    "Reads the tests and runs them first to get a red baseline instead of guessing.",
+    "Reads the failure message and traceback to localize each bug rather than shotgun-editing.",
+    "Fixes one bug at a time and re-runs the tests after each change.",
+    "Uses the AI assistant critically: asks focused questions, verifies the suggestions against the spec, does not paste blindly.",
+    "Notices things the tests do not cover and either adds a test or says so.",
+    "Explains the root cause of each bug, not just the patch."
+  ],
+  "followups": [
+    "Why do you think the fee bug slipped through? How would you test money rounding?",
+    "How would you make the draw testable without depending on a seed's exact output?",
+    "How would you extend this to allow weighted tickets or several prizes without breaking the one-winner behavior?",
+    "What would break if two people bought tickets at the same time? What would you change?",
+    "If the AI had suggested a fix that passed the tests but contradicted the spec, how would you have caught it?"
+  ],
+  "rubric": [
+    { "id": "debugging", "label": "Debugging method (reproduces, localizes, verifies)", "weight": 3 },
+    { "id": "correctness", "label": "Correctness of fixes (all bugs, no regressions)", "weight": 3 },
+    { "id": "spec", "label": "Reads and uses the written constraints", "weight": 2 },
+    { "id": "ai_use", "label": "Uses the AI assistant critically", "weight": 2 },
+    { "id": "communication", "label": "Explains reasoning clearly while working", "weight": 2 }
+  ],
+  "bugs": [
+    {
+      "title": "Ticket limit is off by one",
+      "description": "buy_tickets rejects a purchase that lands exactly on the limit because the check uses >= instead of >, so nobody can ever hold 5 tickets.",
+      "file_path": "raffle.py",
+      "hint": "Try to buy exactly the maximum number of tickets for one person.",
+      "caught_by": ["test_can_buy_exactly_the_limit"]
+    },
+    {
+      "title": "Ticket numbers restart for every buyer",
+      "description": "Numbers are derived from how many tickets the buyer already owns instead of from the global ticket count, so different people get duplicate ticket numbers.",
+      "file_path": "raffle.py",
+      "hint": "Look at the ticket numbers after two different people buy tickets.",
+      "caught_by": ["test_ticket_numbers_are_global_and_start_at_one"]
+    },
+    {
+      "title": "Names are not normalized",
+      "description": "person_key only strips whitespace, so \"Ana\" and \"ana\" (or \"Ana  Lee\" vs \"Ana Lee\") are counted as different people and can bypass the per-person limit.",
+      "file_path": "raffle.py",
+      "hint": "What if the same person types their name differently on their second purchase?",
+      "caught_by": ["test_same_person_with_different_spelling_shares_the_limit"]
+    },
+    {
+      "title": "Prize pool rounds the wrong way",
+      "description": "prize_pool computes the pool as 85% rounded down instead of computing the fee rounded down, so the organizer fee is rounded up and the pool loses a cent.",
+      "file_path": "pricing.py",
+      "hint": "Compare the prize pool for a single ticket to what the written rule gives.",
+      "caught_by": ["test_prize_pool_rounds_the_fee_down", "test_prize_pool_is_sales_minus_fee"]
+    },
+    {
+      "title": "Winner draw is off by one",
+      "description": "draw_winner uses randint(0, n) whose upper bound is inclusive, so it can index past the last ticket (IndexError) and skews the distribution.",
+      "file_path": "raffle.py",
+      "hint": "Run the draw with many different seeds.",
+      "caught_by": ["test_draw_uses_one_randrange_over_sold_tickets", "test_every_ticket_can_win"]
+    }
+  ]
+}

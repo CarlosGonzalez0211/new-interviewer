@@ -1,0 +1,151 @@
+/* Room workstream styles. Theme-agnostic: uses Shell variables when present, currentColor-derived tints otherwise. */
+.room {
+  --rm-fg: var(--text-h, inherit);
+  --rm-muted: var(--text, #6b7280);
+  --rm-border: var(--border, color-mix(in srgb, currentColor 22%, transparent));
+  --rm-surface: var(--code-bg, color-mix(in srgb, currentColor 6%, transparent));
+  --rm-accent: var(--accent, #6366f1);
+  --rm-accent-bg: var(--accent-bg, color-mix(in srgb, #6366f1 12%, transparent));
+  --rm-ok: #16a34a;
+  --rm-bad: #dc2626;
+  --rm-warn: #d97706;
+  --rm-mono: var(--mono, ui-monospace, Consolas, monospace);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.45;
+  min-height: 0;
+  box-sizing: border-box;
+}
+.room *, .room *::before, .room *::after { box-sizing: border-box; }
+.room h1, .room h2, .room h3, .room h4 { color: var(--rm-fg); margin: 0; letter-spacing: normal; }
+.room h2 { font-size: 16px; }
+.room h3 { font-size: 14px; }
+.room p { margin: 0; }
+
+.room-full { height: calc(100vh - 120px); min-height: 520px; }
+
+.room-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 12px; border: 1px solid var(--rm-border); border-radius: 8px; background: var(--rm-surface);
+}
+.room-bar .spacer { flex: 1; }
+.room-muted { color: var(--rm-muted); font-size: 12px; }
+.room-mono { font-family: var(--rm-mono); }
+
+.room-btn {
+  font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--rm-border); background: transparent; color: var(--rm-fg);
+}
+.room-btn:hover:not(:disabled) { border-color: var(--rm-accent); }
+.room-btn:focus-visible, .room-tab:focus-visible, .room-input:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
+.room-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.room-btn.primary { background: var(--rm-accent); border-color: var(--rm-accent); color: #fff; font-weight: 600; }
+.room-btn.danger { border-color: var(--rm-bad); color: var(--rm-bad); }
+.room-btn.small { padding: 2px 8px; font-size: 12px; }
+
+.room-input {
+  font: inherit; width: 100%; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--rm-border); background: transparent; color: var(--rm-fg);
+}
+textarea.room-input { resize: vertical; min-height: 60px; }
+
+.room-badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px;
+  font-size: 12px; border: 1px solid var(--rm-border); white-space: nowrap;
+}
+.room-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rm-muted); display: inline-block; }
+.room-dot.ok { background: var(--rm-ok); }
+.room-dot.bad { background: var(--rm-bad); }
+.room-dot.warn { background: var(--rm-warn); }
+.room-dot.pulse { animation: room-pulse 1.4s ease-in-out infinite; }
+@keyframes room-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .room-dot.pulse { animation: none; } }
+
+.room-error { color: var(--rm-bad); font-size: 13px; }
+.room-error[role='alert'] { padding: 6px 10px; border: 1px solid var(--rm-bad); border-radius: 6px; }
+
+.room-card { border: 1px solid var(--rm-border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.room-card > h2, .room-card > h3 { display: flex; align-items: center; gap: 8px; }
+
+/* Layout */
+.room-split { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; flex: 1; min-height: 0; }
+.room-split.interviewer { grid-template-columns: minmax(0, 1fr) 340px; }
+.room-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+.room-scroll { overflow: auto; min-height: 0; }
+@media (max-width: 1000px) { .room-split, .room-split.interviewer { grid-template-columns: minmax(0, 1fr); } .room-full { height: auto; } }
+
+/* Tabs */
+.room-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--rm-border); overflow-x: auto; }
+.room-tab {
+  font: inherit; font-size: 13px; padding: 6px 12px; border: 0; background: transparent; color: var(--rm-muted); cursor: pointer;
+  border-bottom: 2px solid transparent; white-space: nowrap; font-family: inherit;
+}
+.room-tab[aria-selected='true'] { color: var(--rm-fg); border-bottom-color: var(--rm-accent); font-weight: 600; }
+.room-tab.file { font-family: var(--rm-mono); font-size: 12px; }
+
+.room-editor { flex: 1; min-height: 320px; border: 1px solid var(--rm-border); border-radius: 6px; overflow: hidden; }
+.room-editor-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
+
+/* Remote cursor decorations (Monaco renders outside React, so these are global class names). */
+.room-remote-caret::before { content: ''; border-left: 2px solid #f97316; margin-left: -1px; }
+.room-remote-selection { background: rgba(249, 115, 22, 0.25); }
+.room-remote-line { background: rgba(249, 115, 22, 0.08); }
+
+/* Test results */
+.room-results { display: flex; flex-direction: column; gap: 6px; }
+.room-result { border: 1px solid var(--rm-border); border-radius: 6px; padding: 6px 10px; }
+.room-result summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.room-result.passed { border-left: 3px solid var(--rm-ok); }
+.room-result.failed { border-left: 3px solid var(--rm-bad); }
+.room-result.error { border-left: 3px solid var(--rm-warn); }
+.room-status { font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.room-status.passed { color: var(--rm-ok); }
+.room-status.failed { color: var(--rm-bad); }
+.room-status.error { color: var(--rm-warn); }
+.room-pre {
+  font-family: var(--rm-mono); font-size: 12px; margin: 6px 0 0; padding: 8px; border-radius: 6px;
+  background: var(--rm-surface); white-space: pre-wrap; word-break: break-word; overflow: auto; max-height: 260px;
+  color: var(--rm-fg);
+}
+
+/* Chat */
+.room-chat { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.room-chat-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; min-height: 160px; }
+.room-msg { max-width: 94%; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--rm-border); overflow-wrap: anywhere; }
+.room-msg.user { align-self: flex-end; background: var(--rm-accent-bg); border-color: transparent; }
+.room-msg.model { align-self: flex-start; }
+.room-msg.pending { opacity: 0.7; }
+.room-msg-meta { font-size: 11px; color: var(--rm-muted); margin-bottom: 2px; }
+.room-chat-form { display: flex; gap: 6px; align-items: flex-end; margin-top: 8px; }
+
+/* Rich text */
+.room-rich { display: flex; flex-direction: column; gap: 8px; }
+.room-rich p, .room-rich li { white-space: pre-wrap; }
+.room-rich ul, .room-rich ol { margin: 0; padding-left: 22px; }
+.room-rich code.inline { font-family: var(--rm-mono); font-size: 0.92em; background: var(--rm-surface); padding: 1px 4px; border-radius: 4px; }
+.room-code { border: 1px solid var(--rm-border); border-radius: 6px; overflow: hidden; }
+.room-code-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 8px; background: var(--rm-surface); font-size: 11px; color: var(--rm-muted); }
+.room-code pre { margin: 0; padding: 8px; overflow: auto; font-family: var(--rm-mono); font-size: 12px; color: var(--rm-fg); }
+
+/* Lists */
+.room-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.room-list li { display: flex; gap: 8px; align-items: flex-start; }
+.room-bug { border: 1px solid var(--rm-border); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.room-bug-toggles { display: flex; gap: 12px; flex-wrap: wrap; }
+.room-bug-toggles label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; font-size: 13px; }
+.room-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.room-timeline li { display: flex; gap: 10px; align-items: baseline; }
+.room-timeline time { font-family: var(--rm-mono); font-size: 12px; color: var(--rm-muted); flex: none; }
+
+.room-progress { height: 6px; border-radius: 3px; background: var(--rm-surface); overflow: hidden; }
+.room-progress > div { height: 100%; background: var(--rm-accent); transition: width 0.2s; }
+
+.room-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.room-stat { border: 1px solid var(--rm-border); border-radius: 8px; padding: 10px; }
+.room-stat strong { display: block; font-size: 20px; color: var(--rm-fg); }
+
+.room-field { display: flex; flex-direction: column; gap: 4px; }
+.room-narrow { max-width: 820px; width: 100%; margin: 0 auto; }
