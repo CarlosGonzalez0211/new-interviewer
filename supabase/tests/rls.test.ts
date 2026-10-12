@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const schemaSql = readFileSync(join(here, '../migrations/20261009000000_schema.sql'), 'utf8')
+const publicStartSql = readFileSync(join(here, '../migrations/20261012000000_public_start.sql'), 'utf8')
 
 const ALICE = { id: '00000000-0000-0000-0000-00000000000a', email: 'alice@example.com' }
 const BOB = { id: '00000000-0000-0000-0000-00000000000b', email: 'bob@example.com' }
@@ -64,6 +65,7 @@ beforeAll(async () => {
     grant usage on schema public to anon, service_role;
   `)
   await db.exec(schemaSql)
+  await db.exec(publicStartSql)
   // Supabase grants service_role everything via default privileges; emulate.
   await db.exec('grant all on all tables in schema public to service_role')
   await db.exec(`
@@ -283,9 +285,9 @@ describe('(7) ai_messages', () => {
 })
 
 describe('(8) anon', () => {
-  it('can read nothing and call nothing', async () => {
+  it('can read only questions and call nothing', async () => {
     const tables = [
-      'questions', 'question_private', 'question_files', 'question_reference_files', 'question_bugs',
+      'question_private', 'question_files', 'question_reference_files', 'question_bugs',
       'sessions', 'session_files', 'test_runs', 'ai_messages', 'bug_status', 'session_notes', 'session_reviews',
     ]
     for (const t of tables) {
@@ -294,5 +296,79 @@ describe('(8) anon', () => {
     await expect(as('anon', null, `select * from create_session($1, 'interviewer', 'x@y.com')`, [Q])).rejects.toThrow(/permission denied/)
     await expect(as('anon', null, `select * from claim_session($1)`, [Q])).rejects.toThrow(/permission denied/)
     await expect(as('anon', null, `select * from set_phase($1, 'debugging')`, [Q])).rejects.toThrow(/permission denied/)
+  })
+})
+
+describe('(9) public start: anon questions + service-created sessions', () => {
+  const create = (email1: string, email2: string) =>
+    as<{ id: string }>(
+      'service_role',
+      null,
+      `insert into sessions (question_id, interviewer_email, interviewee_email) values ($1, $2, $3) returning id`,
+      [Q, email1, email2],
+    )
+
+  it('anon can select questions but nothing else', async () => {
+    const rows = await as<any>('anon', null, `select title, prompt, constraints from questions`)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].title).toBe('Raffle')
+    for (const t of [
+      'question_private', 'question_files', 'question_reference_files', 'question_bugs', 'sessions',
+      'session_files', 'test_runs', 'ai_messages', 'bug_status', 'session_notes', 'session_reviews',
+      'interview_requests',
+    ]) {
+      await expect(as('anon', null, `select * from ${t}`), t).rejects.toThrow(/permission denied/)
+    }
+    await expect(as('anon', null, `insert into questions (slug, title, prompt) values ('z','z','z')`)).rejects.toThrow()
+    await expect(as('anon', null, `update questions set title = 'x'`)).rejects.toThrow()
+  })
+
+  it('interview_requests is service-role only', async () => {
+    await as('service_role', null, `insert into interview_requests (ip, emails) values ('1.1.1.1', array['a@b.co'])`)
+    expect(await as('service_role', null, `select * from interview_requests`)).toHaveLength(1)
+    await expect(asUser(ALICE, `select * from interview_requests`)).rejects.toThrow(/permission denied/)
+    await expect(asUser(ALICE, `insert into interview_requests (ip) values ('x')`)).rejects.toThrow(/permission denied/)
+  })
+
+  it('a creator-less session is invisible until claimed, then each email lands in its own role', async () => {
+    const [s] = await create(ALICE.email, 'Bob@example.com'.toLowerCase())
+    const created = (await db.query<any>(`select created_by, interviewer_id, interviewee_id, phase from sessions where id = $1`, [s.id])).rows[0]
+    expect(created).toMatchObject({ created_by: null, interviewer_id: null, interviewee_id: null, phase: 'briefing' })
+
+    // nobody (even a reserved email) can read before claiming
+    expect(await asUser(ALICE, `select * from sessions where id = $1`, [s.id])).toHaveLength(0)
+    expect(await asUser(BOB, `select * from sessions where id = $1`, [s.id])).toHaveLength(0)
+    expect(await asUser(CAROL, `select * from sessions where id = $1`, [s.id])).toHaveLength(0)
+
+    const [a] = await asUser<any>(ALICE, `select * from claim_session($1)`, [s.id])
+    expect(a.interviewer_id).toBe(ALICE.id)
+    expect(a.interviewee_id).toBeNull()
+    const [b] = await asUser<any>(BOB, `select * from claim_session($1)`, [s.id])
+    expect(b.interviewee_id).toBe(BOB.id)
+    expect(b.interviewer_id).toBe(ALICE.id)
+
+    // visible to participants after claim, still not to a third user
+    expect(await asUser(ALICE, `select * from sessions where id = $1`, [s.id])).toHaveLength(1)
+    expect(await asUser(BOB, `select * from sessions where id = $1`, [s.id])).toHaveLength(1)
+    expect(await asUser(CAROL, `select * from sessions where id = $1`, [s.id])).toHaveLength(0)
+    await expect(asUser(CAROL, `select * from claim_session($1)`, [s.id])).rejects.toThrow(/no open slot/)
+
+    // the interviewer can drive the phase; the interviewee cannot read secrets
+    await asUser(ALICE, `select * from set_phase($1, 'debugging')`, [s.id])
+    expect((await asUser(BOB, `select * from session_files where session_id = $1`, [s.id])).length).toBeGreaterThan(0)
+    await seedPrivateRows(s.id)
+    for (const t of PRIVATE_TABLES) {
+      expect(await asUser(BOB, `select * from ${t}`), t).toHaveLength(0)
+      expect((await asUser(ALICE, `select * from ${t}`)).length, t).toBeGreaterThan(0)
+    }
+  })
+
+  it('claiming one slot does not expose the session to the other reserved email', async () => {
+    const [s] = await create(ALICE.email, BOB.email)
+    await asUser(BOB, `select * from claim_session($1)`, [s.id])
+    expect(await asUser(ALICE, `select * from sessions where id = $1`, [s.id])).toHaveLength(0)
+    expect(await asUser(BOB, `select * from sessions where id = $1`, [s.id])).toHaveLength(1)
+    // Bob (interviewee) still cannot reach private tables before the interviewer claims
+    for (const t of PRIVATE_TABLES) expect(await asUser(BOB, `select * from ${t}`), t).toHaveLength(0)
   })
 })

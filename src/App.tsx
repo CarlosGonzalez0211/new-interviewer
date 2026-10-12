@@ -5,9 +5,10 @@ import Layout from './components/Layout'
 import SetupScreen from './components/SetupScreen'
 import { isSupabaseConfigured, missingEnvVars } from './lib/supabase'
 import Dashboard from './pages/Dashboard'
+import Home from './pages/Home'
 import Login from './pages/Login'
-import NewSession from './pages/NewSession'
 import NotFound from './pages/NotFound'
+import QuestionPage from './pages/QuestionPage'
 import RoomPage from './pages/RoomPage'
 
 export default function App() {
@@ -17,16 +18,25 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/new" element={<NewSession />} />
-            <Route path="/session/:id" element={<RoomPage />} />
+          <Route element={<Layout />}>
+            <Route path="/" element={<Home />} />
+            <Route path="/questions/:slug" element={<QuestionPage />} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/session/:id"
+              element={
+                <ProtectedRoute>
+                  <RoomPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

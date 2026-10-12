@@ -46,3 +46,7 @@ policy = "oneshot"
 [functions.ai-chat]
 enabled = true
 verify_jwt = true
+
+[functions.create-interview]
+enabled = true
+verify_jwt = false

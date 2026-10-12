@@ -36,15 +36,15 @@ export default function Dashboard() {
           <h1>Your interviews</h1>
           <p className="muted">Sessions you created or were invited to.</p>
         </div>
-        <Link to="/new" className="btn btn-primary">
-          New interview
+        <Link to="/" className="btn btn-primary">
+          Start a new interview
         </Link>
       </div>
       <ErrorMessage message={error} />
       {!sessions && !error && <Spinner label="Loading sessions" />}
       {sessions && sessions.length === 0 && (
         <Card>
-          <p>No interviews yet. Start one and invite a friend to play the other role.</p>
+          <p>No interviews yet. Pick a question on the home page and enter two emails to start one.</p>
         </Card>
       )}
       {sessions && sessions.length > 0 && (

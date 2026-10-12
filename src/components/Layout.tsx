@@ -3,7 +3,7 @@ import { useAuth } from '../auth/context'
 import Button from './ui/Button'
 
 export default function Layout() {
-  const { user, signOut } = useAuth()
+  const { user, loading, signOut } = useAuth()
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -14,10 +14,25 @@ export default function Layout() {
           Interview Lab
         </Link>
         <nav className="header-actions" aria-label="Main">
-          {user?.email && <span className="muted small hide-sm">{user.email}</span>}
-          <Button variant="ghost" onClick={() => void signOut()}>
-            Sign out
-          </Button>
+          <Link to="/" className="btn btn-ghost">
+            Questions
+          </Link>
+          {!loading && user && (
+            <>
+              <Link to="/dashboard" className="btn btn-ghost">
+                My interviews
+              </Link>
+              {user.email && <span className="muted small hide-sm">{user.email}</span>}
+              <Button variant="ghost" onClick={() => void signOut()}>
+                Sign out
+              </Button>
+            </>
+          )}
+          {!loading && !user && (
+            <Link to="/login" className="btn btn-ghost">
+              Sign in
+            </Link>
+          )}
         </nav>
       </header>
       <main className="app-main">
