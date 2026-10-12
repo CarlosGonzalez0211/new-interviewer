@@ -136,6 +136,18 @@ describe("handleCreateInterview", () => {
     expect((await handleCreateInterview(post(good), ok.deps)).status).toBe(200);
   });
 
+  it("does not count failed sends toward the rate limits", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failAll = makeDeps({ send: async () => "smtp down" });
+    await handleCreateInterview(post(good), failAll.deps);
+    expect(failAll.requests).toHaveLength(0);
+    const oneOk = makeDeps({ send: async (email) => (email === "bob@example.com" ? "smtp down" : null) });
+    await handleCreateInterview(post(good), oneOk.deps);
+    expect(oneOk.requests).toHaveLength(1);
+    expect(oneOk.requests[0].emails).toEqual(["alice@example.com"]);
+    spy.mockRestore();
+  });
+
   it("uses the first x-forwarded-for hop for the IP and records the request", async () => {
     const { deps, requests } = makeDeps();
     await handleCreateInterview(post(good, { "x-forwarded-for": "1.2.3.4, 10.0.0.1" }), deps);

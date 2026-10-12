@@ -8,8 +8,8 @@ export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Max-Age": "86400",
 };
 
-export const MAX_REQUESTS_PER_IP_PER_HOUR = 8;
-export const MAX_SESSIONS_PER_EMAIL_PER_HOUR = 3;
+export const MAX_REQUESTS_PER_IP_PER_HOUR = 30;
+export const MAX_SESSIONS_PER_EMAIL_PER_HOUR = 10;
 export const DEFAULT_SITE_URL = "https://new-interviewer.vercel.app";
 const HOUR_MS = 3_600_000;
 
@@ -93,7 +93,6 @@ export async function handleCreateInterview(req: Request, deps: Deps): Promise<R
       }
     }
 
-    await deps.data.insertRequest(ip, [interviewer_email, interviewee_email]);
     const session = await deps.data.createSession({ question_id, interviewer_email, interviewee_email });
 
     const siteUrl = resolveSiteUrl(req.headers.get("Origin"), deps.env.SITE_URL);
@@ -116,6 +115,11 @@ export async function handleCreateInterview(req: Request, deps: Deps): Promise<R
     const [errA, errB] = await Promise.all([send("interviewer", interviewer_email), send("interviewee", interviewee_email)]);
 
     const sent = { interviewer: errA === null, interviewee: errB === null };
+    // Only emails that were actually delivered count toward the rate limits.
+    const delivered = [sent.interviewer ? interviewer_email : null, sent.interviewee ? interviewee_email : null].filter(
+      (e): e is string => e !== null,
+    );
+    if (delivered.length > 0) await deps.data.insertRequest(ip, delivered);
     const result: { session_id: string; sent: typeof sent; errors?: Record<string, string> } = {
       session_id: session.id,
       sent,
