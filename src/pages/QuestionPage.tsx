@@ -6,6 +6,14 @@ import { Button, Card, ErrorMessage, Spinner } from '../components/ui'
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/
 
+function errorText(errors: unknown, key: 'interviewer' | 'interviewee'): string | undefined {
+  if (errors && typeof errors === 'object' && !Array.isArray(errors)) {
+    const v = (errors as Record<string, unknown>)[key]
+    return typeof v === 'string' ? v : undefined
+  }
+  return undefined
+}
+
 export default function QuestionPage() {
   const { slug = '' } = useParams()
   const [question, setQuestion] = useState<Question | null | undefined>(undefined)
@@ -87,9 +95,9 @@ export default function QuestionPage() {
 
   if (result) {
     const link = sessionLink(result.session_id)
-    const rows: { label: string; email: string; ok: boolean }[] = [
-      { label: 'Interviewer', email: interviewerEmail.trim(), ok: result.sent.interviewer },
-      { label: 'Interviewee', email: intervieweeEmail.trim(), ok: result.sent.interviewee },
+    const rows: { label: string; email: string; ok: boolean; error?: string }[] = [
+      { label: 'Interviewer', email: interviewerEmail.trim(), ok: result.sent.interviewer, error: errorText(result.errors, 'interviewer') },
+      { label: 'Interviewee', email: intervieweeEmail.trim(), ok: result.sent.interviewee, error: errorText(result.errors, 'interviewee') },
     ]
     const allSent = rows.every((r) => r.ok)
     return (
@@ -103,6 +111,11 @@ export default function QuestionPage() {
             <li key={r.label} className="row">
               <span className="grow">
                 {r.label}: <strong>{r.email}</strong>
+                {!r.ok && r.error && (
+                  <small role="alert" style={{ display: 'block', color: 'var(--danger, #f87171)', overflowWrap: 'anywhere' }}>
+                    {r.error}
+                  </small>
+                )}
               </span>
               <span className={`badge ${r.ok ? 'badge-green' : 'badge-amber'}`}>{r.ok ? 'sent' : 'not sent'}</span>
             </li>

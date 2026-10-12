@@ -55,7 +55,7 @@ const deps: Deps = {
       email,
       options: { shouldCreateUser: true, emailRedirectTo: redirectTo },
     });
-    return error ? error.message : null;
+    return error ? `${error.code ?? error.status ?? "error"}: ${error.message}` : null;
   },
   now: () => new Date(),
   env: { SITE_URL: Deno.env.get("SITE_URL") ?? undefined },

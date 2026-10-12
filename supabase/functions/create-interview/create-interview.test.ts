@@ -161,7 +161,8 @@ describe("handleCreateInterview", () => {
     expect(sends[0].url).toBe(`http://localhost:5173/session/${SID}`);
   });
 
-  it("still returns 200 when one send fails, without leaking the error", async () => {
+  it("still returns 200 when one send fails, reporting the reason and logging it", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { deps } = makeDeps({
       send: async (email) => (email === "bob@example.com" ? "email rate limit exceeded: secret-internal" : null),
     });
@@ -171,7 +172,11 @@ describe("handleCreateInterview", () => {
     expect(body.session_id).toBe(SID);
     expect(body.sent).toEqual({ interviewer: true, interviewee: false });
     expect(Object.keys(body.errors)).toEqual(["interviewee"]);
-    expect(JSON.stringify(body)).not.toMatch(/secret-internal/);
+    expect(body.errors.interviewee).toContain("email rate limit exceeded");
+    expect(spy).toHaveBeenCalledTimes(1);
+    const logged = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(logged).toMatchObject({ event: "magic_link_failed", role: "interviewee", email: "bob@example.com" });
+    spy.mockRestore();
   });
 
   it("returns 200 with both flags false when sending throws", async () => {

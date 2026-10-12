@@ -98,14 +98,22 @@ export async function handleCreateInterview(req: Request, deps: Deps): Promise<R
 
     const siteUrl = resolveSiteUrl(req.headers.get("Origin"), deps.env.SITE_URL);
     const redirectTo = `${siteUrl}/session/${session.id}`;
-    const send = async (email: string): Promise<string | null> => {
+    const send = async (role: string, email: string): Promise<string | null> => {
+      let detail: string | null;
       try {
-        return await deps.sendMagicLink(email, redirectTo);
-      } catch {
-        return "send failed";
+        detail = await deps.sendMagicLink(email, redirectTo);
+      } catch (e) {
+        detail = `exception: ${e instanceof Error ? e.message : "unknown"}`;
       }
+      if (detail !== null) {
+        // Visible in Supabase Dashboard > Edge Functions > create-interview > Logs.
+        console.error(
+          JSON.stringify({ event: "magic_link_failed", session_id: session.id, role, email, redirectTo, detail }),
+        );
+      }
+      return detail;
     };
-    const [errA, errB] = await Promise.all([send(interviewer_email), send(interviewee_email)]);
+    const [errA, errB] = await Promise.all([send("interviewer", interviewer_email), send("interviewee", interviewee_email)]);
 
     const sent = { interviewer: errA === null, interviewee: errB === null };
     const result: { session_id: string; sent: typeof sent; errors?: Record<string, string> } = {
@@ -113,8 +121,8 @@ export async function handleCreateInterview(req: Request, deps: Deps): Promise<R
       sent,
     };
     const errors: Record<string, string> = {};
-    if (errA !== null) errors.interviewer = "The sign-in email could not be sent. Use the direct link instead.";
-    if (errB !== null) errors.interviewee = "The sign-in email could not be sent. Use the direct link instead.";
+    if (errA !== null) errors.interviewer = `Sign-in email failed (${errA}). Use the direct link instead.`;
+    if (errB !== null) errors.interviewee = `Sign-in email failed (${errB}). Use the direct link instead.`;
     if (Object.keys(errors).length > 0) result.errors = errors;
     return json(200, result);
   } catch (e) {
