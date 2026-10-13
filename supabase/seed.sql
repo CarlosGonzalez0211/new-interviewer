@@ -2,6 +2,1163 @@
 -- Idempotent: safe to run repeatedly.
 begin;
 
+-- question: magic-hedge
+insert into public.questions (id, slug, title, prompt, constraints, language) values ('14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$magic-hedge$q0$, $q0$Magic Hedge: Rare Bird Alerts$q0$, $q0$MAGIC HEDGE: review the log and implement rare_bird_alerts
+
+Montrose Point Bird Sanctuary relies on volunteer checklists to understand what birds were present at the Magic Hedge each day. The current starter implementation already captures checklists and sightings, but the sanctuary still cannot flag rare birds reliably when multiple independent observers report them close together in time.
+
+The team wants this behavior completed in a way that matches the volunteer notes already included in the project. Accuracy matters because daily totals and rare bird alerts are used by staff and birders to decide when to review unusual sightings more closely.
+
+Product Requirements
+
+Complete the rare bird alert behavior for the existing sighting log. The implementation should follow the repository's volunteer notes and preserve the current starter structure rather than replacing it with a different design.
+- Use the existing checklist, sighting, and alert concepts already present in the codebase.
+- A species should be treated consistently even when capitalization or surrounding spaces differ.
+- Entries that do not identify a single species, including sp. entries and slash entries, must remain in the log but must not count as a species for alerting purposes.
+- A sighting belongs to the calendar day when it was seen, even if the checklist started on a different day.
+- A rare bird alert should be raised only when the same rare species is reported by two different observers within one hour of each other.
+- The returned alerts should be based on submitted checklists only.
+- The alert should capture the normalized species name, the time when the second qualifying report confirms the alert, and the distinct observers involved in that one-hour confirmation window.
+- Review the existing behavior around daily totals and adjust the implementation only where needed to align with the volunteer notes.
+
+Technical Considerations
+
+The repository includes starter code, shipped tests, and a deterministic scenario script. Candidates are expected to reason from the written notes, identify missing or incorrect assumptions in the current implementation, and add or update tests to cover the intended behavior. The planted defects in the starter should be fixed through implementation work, not by weakening expectations.$q0$, $q0$MAGIC HEDGE - Volunteer Notes
+
+Scenario
+Montrose Point Bird Sanctuary in Chicago has a patch of shrubs that birders call the Magic Hedge. Volunteers log what they see there, and the sanctuary wants better daily totals and rare bird alerts. (Plover fans still talk about Monty and Rose, who nested on the beach next door.) No bird knowledge is needed.
+- A checklist has one observer, a start time, and a list of sightings.
+- Each sighting has a species name, a count of at least 1, and the time it was seen. All times are sanctuary local time.
+- Species names are compared ignoring capitalization and surrounding spaces.
+- Some entries do not identify a single species: "sp." entries such as gull sp., and slash entries such as Greater/Lesser Scaup. They stay in the log but never count as a species.
+- A species' daily count is the highest count reported on any single checklist that day, not the sum. Different birders see the same flock.
+- A sighting belongs to the day it was seen. A checklist started at 11:40pm can include sightings from the next day.
+- Once submitted, a checklist cannot change.
+- The sanctuary keeps a list of species expected each month. A species not on that month's list is rare. Raise an alert when two different observers report a rare species within an hour of each other.
+
+Your Task
+Before seeing any code:
+1. Explain how you would model checklists, sightings, and alerts.
+2. Identify anything in these notes that must be clarified before implementation.
+3. Outline how rare_bird_alerts(day) would work and the tests you would want.$q0$, $q0$python$q0$)
+on conflict (id) do update set slug = excluded.slug, title = excluded.title, prompt = excluded.prompt, constraints = excluded.constraints, language = excluded.language;
+insert into public.question_private (question_id, checklist, followups, rubric) values ('14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$[
+ "This question is different: the candidate is told the shipped tests pass but the code may deviate from the volunteer notes. They must both find/fix the planted defects AND implement rare_bird_alerts. The visible tests are only the shipped ones (all green on the starter); the hidden acceptance tests are in the reference files.",
+ "Asks clarifying questions before coding: is the daily count the max across checklists (not the sum), and what about repeated sightings of one species within a single checklist (reference assumes per-checklist max, then max across checklists)?",
+ "Asks about the one-hour boundary: is exactly 60 minutes inclusive? (Reference: yes, 60 counts, 61 does not.)",
+ "Asks whether there is one alert per species per day or many, and what confirmed_at / observers should contain (reference: one alert per species per day, the earliest confirmation; observers = distinct observers with a sighting in the 60 minutes up to confirmed_at).",
+ "Asks about observer identity (case/spacing of names, same observer on two checklists) and whether a lone observer repeating a sighting should alert (it should not).",
+ "Asks about midnight and cross-day behavior: a checklist started at 11:40pm with sightings after midnight; a pair of reports straddling midnight alerts on neither day; which month decides 'expected' (month of seen_at).",
+ "Reads the notes against the code line by line instead of trusting that the shipped tests pass; notices day_totals sums instead of taking the highest count, buckets by checklist start date, and that normalize_species/counts_as_species are too weak.",
+ "Notices that a submitted checklist can still be modified through add_sighting and fixes it.",
+ "Writes tests for the gaps first (they fail), then fixes one defect at a time, instead of weakening expectations or rewriting the design.",
+ "Reasons about the time-window algorithm and its complexity (sort per species + sliding window, O(n log n), versus comparing all pairs O(n^2)).",
+ "Adds tests for gaps (boundary 60/61, same observer, unsubmitted, month changes, sp./slash, midnight, ordering of alerts) and uses the AI assistant critically, verifying its output against the notes.",
+ "Interviewer talking point: the comments in scenario.py are slightly inconsistent with its data (Ana's warbler is at 08:11 and Ben's at 07:45, while the comment says Ben's is 35 minutes after Ana's; it is actually 26 minutes before). See whether the candidate notices rather than trusting comments. Expected scenario result: Ring-billed Gull 40 (max of 40/35/22), Robin 6, Blackbird 8, Kirtland's Warbler 1, Piping Plover 1; one alert for Kirtland's Warbler at 08:11 (Ana, Ben); the lone Piping Plover does not alert."
+]$q0$::jsonb, $q0$[
+ "Within a single checklist, should two sightings of the same species be summed or take the max? What did you assume and why?",
+ "The scenario.py comment says Ben's warbler is 35 minutes after Ana's, but the data shows it 26 minutes before. How did you decide which to trust?",
+ "How would your rare_bird_alerts scale to a year of data or a large sanctuary? What would you index or precompute?",
+ "What if the sanctuary wants an alert per confirmation window (a second alert hours later) instead of one per species per day?",
+ "How would you handle time zones or the daylight-saving change, given that all times are naive local times?",
+ "How would you model expected-species lists that change over time, and is a taxonomy change a data problem or a code problem?",
+ "How would you make a submitted checklist truly immutable (frozen dataclass, tuple of sightings, copy on read)?"
+]$q0$::jsonb, $q0$[
+ {
+  "id": "clarification",
+  "label": "Clarifying questions before coding (sum vs max, boundary, one alert, cross-day)",
+  "weight": 3
+ },
+ {
+  "id": "debugging",
+  "label": "Reads notes against code; finds the planted defects methodically",
+  "weight": 3
+ },
+ {
+  "id": "correctness",
+  "label": "Correctness of fixes and of rare_bird_alerts",
+  "weight": 3
+ },
+ {
+  "id": "testing",
+  "label": "Writes tests for gaps and boundaries (does not weaken expectations)",
+  "weight": 2
+ },
+ {
+  "id": "ai_use",
+  "label": "Uses the AI assistant critically",
+  "weight": 2
+ },
+ {
+  "id": "communication",
+  "label": "Explains reasoning clearly while working",
+  "weight": 2
+ }
+]$q0$::jsonb)
+on conflict (question_id) do update set checklist = excluded.checklist, followups = excluded.followups, rubric = excluded.rubric;
+insert into public.question_files (id, question_id, path, content, kind) values
+  ('2f2a1ebb-e858-51e2-bb7b-a80e20d9a11c', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$question.py$q0$, $q0$"""MAGIC HEDGE starter implementation.
+
+The shipped tests pass, but that does not mean the implementation matches the
+volunteer notes. Review the behavior before implementing ``rare_bird_alerts``.
+"""
+
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
+from typing import Dict, List, Tuple
+
+
+# Every time in this log is a naive datetime in sanctuary local time (Chicago).
+# There are no time zones to convert, and nobody is counting warblers at 2am on
+# the night the clocks change.
+ALERT_WINDOW = timedelta(minutes=60)
+
+# Species the sanctuary expects to see, by month number. Trimmed for the
+# exercise; the real list is much longer. Anything not on its month's list is
+# rare.
+EXPECTED_BY_MONTH = {
+    5: (
+        "Ring-billed Gull", "Herring Gull", "American Robin", "Red-winged Blackbird",
+        "Canada Goose", "Mallard", "Song Sparrow", "Yellow Warbler",
+        "Common Grackle", "Barn Swallow", "White-throated Sparrow",
+        "Double-crested Cormorant",
+    ),
+    6: (
+        "Ring-billed Gull", "Herring Gull", "American Robin", "Red-winged Blackbird",
+        "Canada Goose", "Mallard", "Song Sparrow", "Yellow Warbler",
+        "Common Grackle", "Barn Swallow", "Cedar Waxwing",
+    ),
+}
+
+
+class LogError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class Sighting:
+    species: str  # exactly as the volunteer typed it
+    count: int
+    seen_at: datetime
+
+
+@dataclass
+class Checklist:
+    id: str
+    observer: str
+    started_at: datetime
+    sightings: List[Sighting] = field(default_factory=list)
+    submitted: bool = False
+
+
+@dataclass(frozen=True)
+class Alert:
+    species: str  # normalized name, as returned by normalize_species
+    confirmed_at: datetime  # seen_at of the report that made it two observers
+    observers: Tuple[str, ...]  # sorted, distinct, within the hour ending then
+
+
+def normalize_species(name: str) -> str:
+    return name.strip()
+
+
+def counts_as_species(name: str) -> bool:
+    return not normalize_species(name).endswith(" sp.")
+
+
+def is_expected(species: str, month: int) -> bool:
+    expected = {normalize_species(name) for name in EXPECTED_BY_MONTH.get(month, ())}
+    return normalize_species(species) in expected
+
+
+class SightingLog:
+    def __init__(self):
+        self._checklists: Dict[str, Checklist] = {}
+        self._next_id = 1
+
+    def _get(self, checklist_id: str) -> Checklist:
+        if checklist_id not in self._checklists:
+            raise LogError(f"unknown checklist: {checklist_id}")
+        return self._checklists[checklist_id]
+
+    def start_checklist(self, observer: str, started_at: datetime) -> str:
+        if not observer or not observer.strip():
+            raise LogError("observer is required")
+        if not isinstance(started_at, datetime):
+            raise LogError("started_at must be a datetime")
+
+        checklist_id = f"checklist-{self._next_id}"
+        self._next_id += 1
+        self._checklists[checklist_id] = Checklist(
+            id=checklist_id, observer=observer.strip(), started_at=started_at
+        )
+        return checklist_id
+
+    def add_sighting(
+        self, checklist_id: str, species: str, count: int, seen_at: datetime
+    ) -> Sighting:
+        checklist = self._get(checklist_id)
+        if not species or not species.strip():
+            raise LogError("species is required")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise LogError("count must be a whole number of at least 1")
+        if not isinstance(seen_at, datetime):
+            raise LogError("seen_at must be a datetime")
+
+        sighting = Sighting(species=species, count=count, seen_at=seen_at)
+        checklist.sightings.append(sighting)
+        return sighting
+
+    def submit(self, checklist_id: str) -> None:
+        self._get(checklist_id).submitted = True
+
+    def day_totals(self, day: date) -> Dict[str, int]:
+        totals: Dict[str, int] = {}
+        for checklist in self._checklists.values():
+            if not checklist.submitted:
+                continue
+            if checklist.started_at.date() != day:
+                continue
+            for sighting in checklist.sightings:
+                if not counts_as_species(sighting.species):
+                    continue
+                name = normalize_species(sighting.species)
+                totals[name] = totals.get(name, 0) + sighting.count
+        return totals
+
+    def rare_bird_alerts(self, day: date) -> List[Alert]:
+        """Return the rare bird alerts for one day.
+
+        Implement this after reviewing the existing code. Use the clarified
+        rules, and add tests for cases the shipped suite misses.
+        """
+
+        raise NotImplementedError("candidate task")
+
+
+# === SHIPPED TESTS ===
+
+MAY_14 = date(2026, 5, 14)
+
+
+def at(hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 5, 14, hour, minute)
+
+
+def test_checklist_ids_are_assigned():
+    log = SightingLog()
+    assert log.start_checklist("Ana", at(7)) == "checklist-1"
+    assert log.start_checklist("Ben", at(7, 5)) == "checklist-2"
+
+
+def test_submitted_checklist_counts_toward_totals():
+    log = SightingLog()
+    checklist = log.start_checklist("Ana", at(7))
+    log.add_sighting(checklist, "Ring-billed Gull", 40, at(7, 5))
+    log.add_sighting(checklist, "  American Robin ", 3, at(7, 10))
+    log.submit(checklist)
+
+    assert log.day_totals(MAY_14) == {
+        normalize_species("Ring-billed Gull"): 40,
+        normalize_species("American Robin"): 3,
+    }
+
+
+def test_unsubmitted_checklist_is_ignored():
+    log = SightingLog()
+    checklist = log.start_checklist("Ana", at(7))
+    log.add_sighting(checklist, "Ring-billed Gull", 40, at(7, 5))
+
+    assert log.day_totals(MAY_14) == {}
+
+
+def test_unidentified_gull_is_not_a_species():
+    log = SightingLog()
+    checklist = log.start_checklist("Ben", at(8))
+    log.add_sighting(checklist, "gull sp.", 12, at(8, 5))
+    log.add_sighting(checklist, "Herring Gull", 2, at(8, 10))
+    log.submit(checklist)
+
+    assert counts_as_species("Herring Gull")
+    assert not counts_as_species("gull sp.")
+    assert log.day_totals(MAY_14) == {normalize_species("Herring Gull"): 2}
+
+
+def test_zero_count_is_rejected():
+    log = SightingLog()
+    checklist = log.start_checklist("Ana", at(7))
+    try:
+        log.add_sighting(checklist, "Mallard", 0, at(7, 5))
+    except LogError:
+        pass
+    else:
+        raise AssertionError("expected LogError")
+
+
+def _run_tests() -> None:
+    failures = 0
+    tests = [
+        value
+        for name, value in globals().items()
+        if name.startswith("test_") and callable(value)
+    ]
+    tests.sort(key=lambda test: test.__name__)
+    for test in tests:
+        try:
+            test()
+            print(f"PASS {test.__name__}")
+        except Exception as exc:  # Simple dependency-free runner for CodePair.
+            failures += 1
+            print(f"FAIL {test.__name__}: {exc}")
+
+    if failures:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    _run_tests()
+$q0$, $q0$buggy$q0$),
+  ('682fdc50-699d-5720-a817-cdf405856b45', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$scenario.py$q0$, $q0$"""Deterministic MAGIC HEDGE scenario for the implementation portion.
+
+Run this after implementing ``rare_bird_alerts`` in question.py. Change a time,
+an observer, or a species and predict the result before running it again.
+
+The scenario is one May morning built from explicit checklists.
+
+Edits worth trying:
+- Move Ben's warbler to 08:11 (61 minutes after Ana's). Predict first.
+- Give Ana a second warbler at 08:00 and move Ben's to 08:40.
+- Add a Piping Plover to Ben's list at 08:50. Then give it to Cara instead.
+"""
+
+from datetime import date, datetime
+from question import SightingLog
+
+
+DAY = date(2026, 5, 14)
+
+# observer -> (checklist start, [(species, count, "HH:MM"), ...])
+CHECKLISTS = {
+    "Ana": ("06:45", [
+        ("Ring-billed Gull", 40, "06:50"),
+        ("gull sp.", 12, "06:55"),
+        ("Kirtland's Warbler", 1, "08:11"),
+        ("American Robin", 6, "07:20"),
+    ]),
+    "Ben": ("07:00", [
+        ("Ring-billed Gull", 35, "07:05"),
+        ("Red-winged Blackbird", 8, "07:30"),
+        ("Kirtland's Warbler", 1, "07:45"),  # 35 minutes after Ana's
+    ]),
+    "Cara": ("08:00", [
+        ("Piping Plover", 1, "08:15"),  # a lone plover; Monty and Rose would understand
+        ("Ring-billed Gull", 22, "08:20"),
+    ]),
+}
+
+
+def at(hhmm: str) -> datetime:
+    hour, minute = (int(part) for part in hhmm.split(":"))
+    return datetime(DAY.year, DAY.month, DAY.day, hour, minute)
+
+
+def main() -> None:
+    log = SightingLog()
+    for observer, (started, sightings) in CHECKLISTS.items():
+        checklist_id = log.start_checklist(observer, at(started))
+        for species, count, seen in sightings:
+            log.add_sighting(checklist_id, species, count, at(seen))
+        log.submit(checklist_id)
+        print(f"{checklist_id}: {observer}, {len(sightings)} sightings")
+
+    print(f"\ntotals for {DAY}:")
+    for species, count in sorted(log.day_totals(DAY).items()):
+        print(f"  {species}: {count}")
+
+    try:
+        alerts = log.rare_bird_alerts(DAY)
+    except NotImplementedError:
+        print("\nalerts: rare_bird_alerts is not implemented yet")
+        return
+
+    print("\nalerts:")
+    if not alerts:
+        print("  (none)")
+    for alert in alerts:
+        observers = ", ".join(alert.observers)
+        print(f"  {alert.confirmed_at:%H:%M} {alert.species} ({observers})")
+
+
+if __name__ == "__main__":
+    main()
+$q0$, $q0$buggy$q0$),
+  ('5111613b-be9f-5140-9489-53b425c2c11b', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$test_shipped.py$q0$, $q0$"""The shipped tests from question.py, exposed to the test runner.
+
+They pass on the starter code, but passing does not mean the code matches the
+volunteer notes. (The runner only collects functions defined in a test file,
+so each shipped test is wrapped here and delegates to question.py.)
+"""
+import question
+
+
+def test_checklist_ids_are_assigned():
+    question.test_checklist_ids_are_assigned()
+
+
+def test_submitted_checklist_counts_toward_totals():
+    question.test_submitted_checklist_counts_toward_totals()
+
+
+def test_unsubmitted_checklist_is_ignored():
+    question.test_unsubmitted_checklist_is_ignored()
+
+
+def test_unidentified_gull_is_not_a_species():
+    question.test_unidentified_gull_is_not_a_species()
+
+
+def test_zero_count_is_rejected():
+    question.test_zero_count_is_rejected()
+$q0$, $q0$test$q0$)
+on conflict (id) do update set question_id = excluded.question_id, path = excluded.path, content = excluded.content, kind = excluded.kind;
+delete from public.question_files where question_id = '14220959-7ac5-51c0-a9e3-b52ee1af4eb3' and id not in ('2f2a1ebb-e858-51e2-bb7b-a80e20d9a11c', '682fdc50-699d-5720-a817-cdf405856b45', '5111613b-be9f-5140-9489-53b425c2c11b');
+insert into public.question_reference_files (id, question_id, path, content) values
+  ('2d7e9af1-ea5a-5f81-ad00-643e420fc70c', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$acceptance/test_acceptance_alerts.py$q0$, $q0$"""Hidden acceptance tests for rare_bird_alerts(day)."""
+from datetime import date, datetime
+
+from question import SightingLog, normalize_species
+
+D14 = date(2026, 5, 14)
+D15 = date(2026, 5, 15)
+WARBLER = normalize_species("Kirtland's Warbler")
+
+
+def t(day, hhmm, month=5):
+    h, m = (int(x) for x in hhmm.split(":"))
+    return datetime(2026, month, day, h, m)
+
+
+def submitted(log, observer, start, sightings, month=5, submit=True):
+    """start: (day, 'HH:MM'); sightings: [(species, count, day, 'HH:MM')]."""
+    cid = log.start_checklist(observer, t(start[0], start[1], month))
+    for species, count, day, hhmm in sightings:
+        log.add_sighting(cid, species, count, t(day, hhmm, month))
+    if submit:
+        log.submit(cid)
+    return cid
+
+
+def pair(log, first, second, species="Kirtland's Warbler", names=("Ana", "Ben")):
+    submitted(log, names[0], (14, "06:00"), [(species, 1, 14, first)])
+    submitted(log, names[1], (14, "06:00"), [(species, 1, 14, second)])
+
+
+def test_alert_confirmed_at_second_report():
+    log = SightingLog()
+    pair(log, "08:11", "07:45")
+    alerts = log.rare_bird_alerts(D14)
+    assert len(alerts) == 1, alerts
+    a = alerts[0]
+    assert a.species == WARBLER
+    assert a.confirmed_at == t(14, "08:11")
+    assert a.observers == ("Ana", "Ben")
+
+
+def test_alert_exactly_sixty_minutes_counts():
+    log = SightingLog()
+    pair(log, "07:00", "08:00")
+    alerts = log.rare_bird_alerts(D14)
+    assert [a.confirmed_at for a in alerts] == [t(14, "08:00")]
+
+
+def test_alert_sixty_one_minutes_does_not_count():
+    log = SightingLog()
+    pair(log, "07:00", "08:01")
+    assert log.rare_bird_alerts(D14) == []
+
+
+def test_alert_same_observer_twice_never_confirms():
+    log = SightingLog()
+    submitted(log, "Ana", (14, "06:00"), [
+        ("Kirtland's Warbler", 1, 14, "07:00"),
+        ("Kirtland's Warbler", 1, 14, "07:10"),
+    ])
+    submitted(log, "  ana ", (14, "07:00"), [("kirtland's warbler", 1, 14, "07:20")])
+    assert log.rare_bird_alerts(D14) == []
+
+
+def test_alert_ignores_unsubmitted_checklists():
+    log = SightingLog()
+    submitted(log, "Ana", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:00")])
+    submitted(log, "Ben", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:10")], submit=False)
+    assert log.rare_bird_alerts(D14) == []
+
+
+def test_alert_never_for_expected_species():
+    log = SightingLog()
+    pair(log, "07:00", "07:10", species="Mallard")
+    assert log.rare_bird_alerts(D14) == []
+
+
+def test_alert_expected_list_depends_on_month():
+    # Cedar Waxwing is expected in June, rare in May.
+    may = SightingLog()
+    pair(may, "07:00", "07:10", species="Cedar Waxwing")
+    assert [a.species for a in may.rare_bird_alerts(D14)] == [normalize_species("Cedar Waxwing")]
+
+    june = SightingLog()
+    submitted(june, "Ana", (14, "06:00"), [("Cedar Waxwing", 2, 14, "07:00")], month=6)
+    submitted(june, "Ben", (14, "06:00"), [("Cedar Waxwing", 1, 14, "07:10")], month=6)
+    assert june.rare_bird_alerts(date(2026, 6, 14)) == []
+
+
+def test_alert_month_comes_from_seen_at_not_checklist_start():
+    log = SightingLog()
+    # Checklists start on May 31 but the birds are seen on June 1, when
+    # Cedar Waxwing is expected.
+    for who in ("Ana", "Ben"):
+        cid = log.start_checklist(who, datetime(2026, 5, 31, 23, 50))
+        log.add_sighting(cid, "Cedar Waxwing", 1, datetime(2026, 6, 1, 0, 10))
+        log.submit(cid)
+    assert log.rare_bird_alerts(date(2026, 6, 1)) == []
+
+
+def test_alert_sp_and_slash_entries_never_alert():
+    log = SightingLog()
+    pair(log, "07:00", "07:10", species="warbler sp.")
+    pair(log, "07:00", "07:10", species="Greater/Lesser Scaup")
+    pair(log, "07:00", "07:10", species="Gull SP.")
+    assert log.rare_bird_alerts(D14) == []
+
+
+def test_alert_case_and_space_variants_are_the_same_species():
+    log = SightingLog()
+    submitted(log, "Ana", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:00")])
+    submitted(log, "Ben", (14, "06:00"), [("  KIRTLAND'S warbler ", 1, 14, "07:30")])
+    alerts = log.rare_bird_alerts(D14)
+    assert len(alerts) == 1, alerts
+    assert alerts[0].species == WARBLER
+    assert alerts[0].observers == ("Ana", "Ben")
+
+
+def test_alert_observer_names_ignore_case_and_spaces():
+    log = SightingLog()
+    submitted(log, "Ana", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:00")])
+    submitted(log, "ANA ", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:30")])
+    assert log.rare_bird_alerts(D14) == []
+
+
+def test_alert_after_midnight_belongs_to_next_day():
+    log = SightingLog()
+    for who, hhmm in (("Ana", "00:10"), ("Ben", "00:40")):
+        cid = log.start_checklist(who, t(14, "23:40"))
+        log.add_sighting(cid, "Kirtland's Warbler", 1, t(15, hhmm))
+        log.submit(cid)
+    assert log.rare_bird_alerts(D14) == []
+    alerts = log.rare_bird_alerts(D15)
+    assert [(a.species, a.confirmed_at) for a in alerts] == [(WARBLER, t(15, "00:40"))]
+
+
+def test_alert_pair_straddling_midnight_does_not_alert_either_day():
+    log = SightingLog()
+    submitted(log, "Ana", (14, "23:00"), [("Kirtland's Warbler", 1, 14, "23:50")])
+    submitted(log, "Ben", (14, "23:00"), [("Kirtland's Warbler", 1, 15, "00:20")])
+    assert log.rare_bird_alerts(D14) == []
+    assert log.rare_bird_alerts(D15) == []
+
+
+def test_alert_identical_timestamp_confirms():
+    log = SightingLog()
+    pair(log, "07:30", "07:30")
+    alerts = log.rare_bird_alerts(D14)
+    assert [(a.confirmed_at, a.observers) for a in alerts] == [(t(14, "07:30"), ("Ana", "Ben"))]
+
+
+def test_alert_lists_only_observers_up_to_confirmation_sorted():
+    log = SightingLog()
+    submitted(log, "Cara", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:00")])
+    submitted(log, "Ben", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:20")])
+    submitted(log, "Ana", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:50")])
+    alerts = log.rare_bird_alerts(D14)
+    assert len(alerts) == 1, alerts
+    assert alerts[0].confirmed_at == t(14, "07:20")  # earliest confirmation
+    assert alerts[0].observers == ("Ben", "Cara")  # Ana reported after it
+
+
+def test_alert_three_observers_all_within_the_hour():
+    log = SightingLog()
+    submitted(log, "Cara", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:00")])
+    submitted(log, "Ana", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:10")])
+    submitted(log, "Ben", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:10")])
+    alerts = log.rare_bird_alerts(D14)
+    assert len(alerts) == 1, alerts
+    assert alerts[0].confirmed_at == t(14, "07:10")
+    assert alerts[0].observers == ("Ana", "Ben", "Cara")
+
+
+def test_alert_observers_exclude_reports_older_than_window():
+    log = SightingLog()
+    submitted(log, "Zed", (14, "05:00"), [("Kirtland's Warbler", 1, 14, "05:00")])
+    submitted(log, "Ana", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:00")])
+    submitted(log, "Ben", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:30")])
+    alerts = log.rare_bird_alerts(D14)
+    assert [(a.confirmed_at, a.observers) for a in alerts] == [(t(14, "07:30"), ("Ana", "Ben"))]
+
+
+def test_alert_only_one_alert_per_species_per_day():
+    log = SightingLog()
+    for who, hhmm in (("Ana", "07:00"), ("Ben", "07:10"), ("Cara", "10:00"), ("Dev", "10:05")):
+        submitted(log, who, (14, "06:00"), [("Kirtland's Warbler", 1, 14, hhmm)])
+    alerts = log.rare_bird_alerts(D14)
+    assert [(a.species, a.confirmed_at) for a in alerts] == [(WARBLER, t(14, "07:10"))]
+
+
+def test_alert_first_qualifying_pair_skips_reports_too_far_apart():
+    log = SightingLog()
+    # Ana at 07:00 is too far from Ben at 08:30, but Cara at 09:00 pairs with Ben.
+    submitted(log, "Ana", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "07:00")])
+    submitted(log, "Ben", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "08:30")])
+    submitted(log, "Cara", (14, "06:00"), [("Kirtland's Warbler", 1, 14, "09:00")])
+    alerts = log.rare_bird_alerts(D14)
+    assert [(a.confirmed_at, a.observers) for a in alerts] == [(t(14, "09:00"), ("Ben", "Cara"))]
+
+
+def test_alert_results_sorted_by_time_then_species():
+    log = SightingLog()
+    pair(log, "09:00", "09:10", species="Piping Plover")
+    pair(log, "07:00", "07:10", species="Snowy Owl")
+    pair(log, "07:00", "07:10", species="Black-necked Stilt")
+    alerts = log.rare_bird_alerts(D14)
+    assert [(a.confirmed_at, a.species) for a in alerts] == [
+        (t(14, "07:10"), normalize_species("Black-necked Stilt")),
+        (t(14, "07:10"), normalize_species("Snowy Owl")),
+        (t(14, "09:10"), normalize_species("Piping Plover")),
+    ]
+
+
+def test_alert_day_filter():
+    log = SightingLog()
+    pair(log, "07:00", "07:10")
+    assert len(log.rare_bird_alerts(D14)) == 1
+    assert log.rare_bird_alerts(D15) == []
+    assert log.rare_bird_alerts(date(2026, 5, 13)) == []
+
+
+def test_alert_lone_rare_species_gives_no_alert():
+    log = SightingLog()
+    submitted(log, "Cara", (14, "08:00"), [("Piping Plover", 1, 14, "08:15")])
+    assert log.rare_bird_alerts(D14) == []
+
+
+def test_alert_no_checklists_gives_empty_list():
+    assert SightingLog().rare_bird_alerts(D14) == []
+$q0$),
+  ('e7085057-8300-5e67-a05d-9eeb2d32c378', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$acceptance/test_acceptance_totals.py$q0$, $q0$"""Hidden acceptance tests: daily totals, species rules, normalization, immutability.
+
+These only use day_totals / counts_as_species / normalize_species / add_sighting,
+so on the buggy starter they fail because of the planted defects.
+"""
+from datetime import date, datetime
+
+from question import LogError, SightingLog, counts_as_species, is_expected, normalize_species
+
+D14 = date(2026, 5, 14)
+D15 = date(2026, 5, 15)
+
+
+def t(day, hhmm):
+    h, m = (int(x) for x in hhmm.split(":"))
+    return datetime(2026, 5, day, h, m)
+
+
+def submitted(log, observer, start, sightings):
+    cid = log.start_checklist(observer, t(*start))
+    for species, count, day, hhmm in sightings:
+        log.add_sighting(cid, species, count, t(day, hhmm))
+    log.submit(cid)
+    return cid
+
+
+def test_acc_daily_count_is_highest_across_checklists():
+    log = SightingLog()
+    submitted(log, "Ana", (14, "06:45"), [("Ring-billed Gull", 40, 14, "06:50")])
+    submitted(log, "Ben", (14, "07:00"), [("Ring-billed Gull", 35, 14, "07:05")])
+    submitted(log, "Cara", (14, "08:00"), [("Ring-billed Gull", 22, 14, "08:20")])
+    assert log.day_totals(D14) == {normalize_species("Ring-billed Gull"): 40}
+
+
+def test_acc_daily_count_takes_max_within_one_checklist():
+    # Assumption: repeats of a species on a single checklist are not summed.
+    log = SightingLog()
+    submitted(log, "Ana", (14, "07:00"), [
+        ("American Robin", 5, 14, "07:05"),
+        ("American Robin", 8, 14, "07:40"),
+    ])
+    assert log.day_totals(D14) == {normalize_species("American Robin"): 8}
+
+
+def test_acc_sighting_belongs_to_day_it_was_seen():
+    log = SightingLog()
+    submitted(log, "Ana", (14, "23:40"), [
+        ("Mallard", 3, 14, "23:50"),
+        ("Mallard", 9, 15, "00:10"),
+        ("Canada Goose", 4, 15, "00:20"),
+    ])
+    assert log.day_totals(D14) == {normalize_species("Mallard"): 3}
+    assert log.day_totals(D15) == {
+        normalize_species("Mallard"): 9,
+        normalize_species("Canada Goose"): 4,
+    }
+
+
+def test_acc_checklist_started_earlier_does_not_claim_next_day_sightings():
+    log = SightingLog()
+    submitted(log, "Ana", (14, "23:40"), [("Mallard", 2, 15, "00:05")])
+    assert log.day_totals(D14) == {}
+    assert log.day_totals(D15) == {normalize_species("Mallard"): 2}
+
+
+def test_acc_slash_entries_are_not_species():
+    assert not counts_as_species("Greater/Lesser Scaup")
+    assert not counts_as_species("  Greater / Lesser Scaup ")
+    assert counts_as_species("Lesser Scaup")
+    log = SightingLog()
+    submitted(log, "Ana", (14, "07:00"), [
+        ("Greater/Lesser Scaup", 6, 14, "07:05"),
+        ("Mallard", 2, 14, "07:10"),
+    ])
+    assert log.day_totals(D14) == {normalize_species("Mallard"): 2}
+
+
+def test_acc_sp_entries_ignore_case_and_spacing():
+    for name in ("gull sp.", "Gull SP.", "  Gull sp.  ", "Gull   sp."):
+        assert not counts_as_species(name), name
+    assert counts_as_species("Spotted Sandpiper")
+    log = SightingLog()
+    submitted(log, "Ana", (14, "07:00"), [
+        ("Gull SP.", 12, 14, "07:05"),
+        (" warbler sp. ", 2, 14, "07:06"),
+        ("Herring Gull", 2, 14, "07:10"),
+    ])
+    assert log.day_totals(D14) == {normalize_species("Herring Gull"): 2}
+
+
+def test_acc_species_names_ignore_case_and_surrounding_spaces():
+    assert normalize_species("  AMERICAN robin ") == normalize_species("American Robin")
+    assert normalize_species("Mallard") != normalize_species("Herring Gull")
+    log = SightingLog()
+    submitted(log, "Ana", (14, "07:00"), [("American Robin", 3, 14, "07:05")])
+    submitted(log, "Ben", (14, "07:00"), [("  american ROBIN ", 7, 14, "07:10")])
+    totals = log.day_totals(D14)
+    assert len(totals) == 1, totals
+    assert list(totals.values()) == [7]
+
+
+def test_acc_expected_species_lookup_ignores_case_and_spaces():
+    assert is_expected("  mallard ", 5)
+    assert is_expected("RING-BILLED GULL", 6)
+    assert not is_expected("Kirtland's Warbler", 5)
+
+
+def test_acc_submitted_checklist_rejects_new_sightings():
+    log = SightingLog()
+    cid = submitted(log, "Ana", (14, "07:00"), [("Mallard", 2, 14, "07:05")])
+    try:
+        log.add_sighting(cid, "Mallard", 50, t(14, "07:30"))
+    except LogError:
+        pass
+    else:
+        raise AssertionError("expected LogError for a submitted checklist")
+    assert log.day_totals(D14) == {normalize_species("Mallard"): 2}
+
+
+def test_acc_submit_is_idempotent():
+    log = SightingLog()
+    cid = submitted(log, "Ana", (14, "07:00"), [("Mallard", 2, 14, "07:05")])
+    log.submit(cid)
+    assert log.day_totals(D14) == {normalize_species("Mallard"): 2}
+$q0$),
+  ('571ae4ce-ae81-54b2-a6fa-6b9c6b1cab1a', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$question.py$q0$, $q0$"""MAGIC HEDGE starter implementation.
+
+The shipped tests pass, but that does not mean the implementation matches the
+volunteer notes. Review the behavior before implementing ``rare_bird_alerts``.
+"""
+
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
+from typing import Dict, List, Tuple
+
+
+# Every time in this log is a naive datetime in sanctuary local time (Chicago).
+# There are no time zones to convert, and nobody is counting warblers at 2am on
+# the night the clocks change.
+ALERT_WINDOW = timedelta(minutes=60)
+
+# Species the sanctuary expects to see, by month number. Trimmed for the
+# exercise; the real list is much longer. Anything not on its month's list is
+# rare.
+EXPECTED_BY_MONTH = {
+    5: (
+        "Ring-billed Gull", "Herring Gull", "American Robin", "Red-winged Blackbird",
+        "Canada Goose", "Mallard", "Song Sparrow", "Yellow Warbler",
+        "Common Grackle", "Barn Swallow", "White-throated Sparrow",
+        "Double-crested Cormorant",
+    ),
+    6: (
+        "Ring-billed Gull", "Herring Gull", "American Robin", "Red-winged Blackbird",
+        "Canada Goose", "Mallard", "Song Sparrow", "Yellow Warbler",
+        "Common Grackle", "Barn Swallow", "Cedar Waxwing",
+    ),
+}
+
+
+class LogError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class Sighting:
+    species: str  # exactly as the volunteer typed it
+    count: int
+    seen_at: datetime
+
+
+@dataclass
+class Checklist:
+    id: str
+    observer: str
+    started_at: datetime
+    sightings: List[Sighting] = field(default_factory=list)
+    submitted: bool = False
+
+
+@dataclass(frozen=True)
+class Alert:
+    species: str  # normalized name, as returned by normalize_species
+    confirmed_at: datetime  # seen_at of the report that made it two observers
+    observers: Tuple[str, ...]  # sorted, distinct, within the hour ending then
+
+
+def normalize_species(name: str) -> str:
+    # Names are compared ignoring capitalization and surrounding spaces.
+    return name.strip().casefold()
+
+
+def counts_as_species(name: str) -> bool:
+    # "gull sp." / "Gull  SP." and slash entries ("Greater/Lesser Scaup") do
+    # not identify a single species.
+    words = normalize_species(name).split()
+    if "/" in name:
+        return False
+    return not (len(words) > 1 and words[-1] == "sp.")
+
+
+def is_expected(species: str, month: int) -> bool:
+    expected = {normalize_species(name) for name in EXPECTED_BY_MONTH.get(month, ())}
+    return normalize_species(species) in expected
+
+
+class SightingLog:
+    def __init__(self):
+        self._checklists: Dict[str, Checklist] = {}
+        self._next_id = 1
+
+    def _get(self, checklist_id: str) -> Checklist:
+        if checklist_id not in self._checklists:
+            raise LogError(f"unknown checklist: {checklist_id}")
+        return self._checklists[checklist_id]
+
+    def start_checklist(self, observer: str, started_at: datetime) -> str:
+        if not observer or not observer.strip():
+            raise LogError("observer is required")
+        if not isinstance(started_at, datetime):
+            raise LogError("started_at must be a datetime")
+
+        checklist_id = f"checklist-{self._next_id}"
+        self._next_id += 1
+        self._checklists[checklist_id] = Checklist(
+            id=checklist_id, observer=observer.strip(), started_at=started_at
+        )
+        return checklist_id
+
+    def add_sighting(
+        self, checklist_id: str, species: str, count: int, seen_at: datetime
+    ) -> Sighting:
+        checklist = self._get(checklist_id)
+        if checklist.submitted:
+            raise LogError(f"checklist {checklist_id} is submitted and cannot change")
+        if not species or not species.strip():
+            raise LogError("species is required")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise LogError("count must be a whole number of at least 1")
+        if not isinstance(seen_at, datetime):
+            raise LogError("seen_at must be a datetime")
+
+        sighting = Sighting(species=species, count=count, seen_at=seen_at)
+        checklist.sightings.append(sighting)
+        return sighting
+
+    def submit(self, checklist_id: str) -> None:
+        self._get(checklist_id).submitted = True
+
+    def day_totals(self, day: date) -> Dict[str, int]:
+        """Daily count per species: the highest count on any single checklist.
+
+        Assumption (worth raising as a clarifying question): within one
+        checklist, several sightings of the same species also take the
+        maximum rather than the sum.
+        """
+        totals: Dict[str, int] = {}
+        for checklist in self._checklists.values():
+            if not checklist.submitted:
+                continue
+            per_checklist: Dict[str, int] = {}
+            for sighting in checklist.sightings:
+                if sighting.seen_at.date() != day:
+                    continue
+                if not counts_as_species(sighting.species):
+                    continue
+                name = normalize_species(sighting.species)
+                per_checklist[name] = max(per_checklist.get(name, 0), sighting.count)
+            for name, count in per_checklist.items():
+                totals[name] = max(totals.get(name, 0), count)
+        return totals
+
+    def rare_bird_alerts(self, day: date) -> List[Alert]:
+        """Return the rare bird alerts for one day.
+
+        Rules:
+        - only SUBMITTED checklists, and only sightings with seen_at on `day`
+          (the checklist's start date is irrelevant);
+        - only entries that count as a species (no "sp." or slash entries);
+        - a species is rare if it is not expected in the month of that
+          sighting's seen_at;
+        - observers are compared after strip(), case-insensitively;
+        - a rare species alerts when two different observers have sightings
+          at most ALERT_WINDOW apart (inclusive: exactly 60 minutes counts,
+          61 does not). Two reports at the same instant also confirm;
+        - ONE alert per species per day, the earliest: confirmed_at is the
+          seen_at of the report that first completes a qualifying pair;
+        - observers lists the distinct observers (first-seen stripped
+          spelling, sorted case-insensitively) with a sighting of that species
+          in [confirmed_at - ALERT_WINDOW, confirmed_at];
+        - alerts are sorted by (confirmed_at, species).
+        """
+        reports: Dict[str, List[Tuple[datetime, str]]] = {}
+        for checklist in self._checklists.values():
+            if not checklist.submitted:
+                continue
+            observer = checklist.observer.strip()
+            for sighting in checklist.sightings:
+                if sighting.seen_at.date() != day:
+                    continue
+                if not counts_as_species(sighting.species):
+                    continue
+                if is_expected(sighting.species, sighting.seen_at.month):
+                    continue
+                name = normalize_species(sighting.species)
+                reports.setdefault(name, []).append((sighting.seen_at, observer))
+
+        alerts: List[Alert] = []
+        for name, items in reports.items():
+            items.sort(key=lambda item: item[0])  # stable: ties keep log order
+            window = deque()  # reports within ALERT_WINDOW of the current one
+            for seen_at, observer in items:
+                while window and seen_at - window[0][0] > ALERT_WINDOW:
+                    window.popleft()
+                if any(o.casefold() != observer.casefold() for _, o in window):
+                    window.append((seen_at, observer))
+                    names: Dict[str, str] = {}
+                    for _, o in window:
+                        names.setdefault(o.casefold(), o)
+                    # reports at the same instant but later in log order
+                    for t, o in items:
+                        if t == seen_at:
+                            names.setdefault(o.casefold(), o)
+                    alerts.append(
+                        Alert(
+                            species=name,
+                            confirmed_at=seen_at,
+                            observers=tuple(
+                                sorted(names.values(), key=lambda o: (o.casefold(), o))
+                            ),
+                        )
+                    )
+                    break
+                window.append((seen_at, observer))
+        alerts.sort(key=lambda alert: (alert.confirmed_at, alert.species))
+        return alerts
+
+
+# === SHIPPED TESTS ===
+
+MAY_14 = date(2026, 5, 14)
+
+
+def at(hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 5, 14, hour, minute)
+
+
+def test_checklist_ids_are_assigned():
+    log = SightingLog()
+    assert log.start_checklist("Ana", at(7)) == "checklist-1"
+    assert log.start_checklist("Ben", at(7, 5)) == "checklist-2"
+
+
+def test_submitted_checklist_counts_toward_totals():
+    log = SightingLog()
+    checklist = log.start_checklist("Ana", at(7))
+    log.add_sighting(checklist, "Ring-billed Gull", 40, at(7, 5))
+    log.add_sighting(checklist, "  American Robin ", 3, at(7, 10))
+    log.submit(checklist)
+
+    assert log.day_totals(MAY_14) == {
+        normalize_species("Ring-billed Gull"): 40,
+        normalize_species("American Robin"): 3,
+    }
+
+
+def test_unsubmitted_checklist_is_ignored():
+    log = SightingLog()
+    checklist = log.start_checklist("Ana", at(7))
+    log.add_sighting(checklist, "Ring-billed Gull", 40, at(7, 5))
+
+    assert log.day_totals(MAY_14) == {}
+
+
+def test_unidentified_gull_is_not_a_species():
+    log = SightingLog()
+    checklist = log.start_checklist("Ben", at(8))
+    log.add_sighting(checklist, "gull sp.", 12, at(8, 5))
+    log.add_sighting(checklist, "Herring Gull", 2, at(8, 10))
+    log.submit(checklist)
+
+    assert counts_as_species("Herring Gull")
+    assert not counts_as_species("gull sp.")
+    assert log.day_totals(MAY_14) == {normalize_species("Herring Gull"): 2}
+
+
+def test_zero_count_is_rejected():
+    log = SightingLog()
+    checklist = log.start_checklist("Ana", at(7))
+    try:
+        log.add_sighting(checklist, "Mallard", 0, at(7, 5))
+    except LogError:
+        pass
+    else:
+        raise AssertionError("expected LogError")
+
+
+def _run_tests() -> None:
+    failures = 0
+    tests = [
+        value
+        for name, value in globals().items()
+        if name.startswith("test_") and callable(value)
+    ]
+    tests.sort(key=lambda test: test.__name__)
+    for test in tests:
+        try:
+            test()
+            print(f"PASS {test.__name__}")
+        except Exception as exc:  # Simple dependency-free runner for CodePair.
+            failures += 1
+            print(f"FAIL {test.__name__}: {exc}")
+
+    if failures:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    _run_tests()
+$q0$),
+  ('9ce3b3e6-20e0-5b4b-a9e8-13e4e051e272', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$scenario.py$q0$, $q0$"""Deterministic MAGIC HEDGE scenario for the implementation portion.
+
+Run this after implementing ``rare_bird_alerts`` in question.py. Change a time,
+an observer, or a species and predict the result before running it again.
+
+The scenario is one May morning built from explicit checklists.
+
+Edits worth trying:
+- Move Ben's warbler to 08:11 (61 minutes after Ana's). Predict first.
+- Give Ana a second warbler at 08:00 and move Ben's to 08:40.
+- Add a Piping Plover to Ben's list at 08:50. Then give it to Cara instead.
+"""
+
+from datetime import date, datetime
+from question import SightingLog
+
+
+DAY = date(2026, 5, 14)
+
+# observer -> (checklist start, [(species, count, "HH:MM"), ...])
+CHECKLISTS = {
+    "Ana": ("06:45", [
+        ("Ring-billed Gull", 40, "06:50"),
+        ("gull sp.", 12, "06:55"),
+        ("Kirtland's Warbler", 1, "08:11"),
+        ("American Robin", 6, "07:20"),
+    ]),
+    "Ben": ("07:00", [
+        ("Ring-billed Gull", 35, "07:05"),
+        ("Red-winged Blackbird", 8, "07:30"),
+        ("Kirtland's Warbler", 1, "07:45"),  # 35 minutes after Ana's
+    ]),
+    "Cara": ("08:00", [
+        ("Piping Plover", 1, "08:15"),  # a lone plover; Monty and Rose would understand
+        ("Ring-billed Gull", 22, "08:20"),
+    ]),
+}
+
+
+def at(hhmm: str) -> datetime:
+    hour, minute = (int(part) for part in hhmm.split(":"))
+    return datetime(DAY.year, DAY.month, DAY.day, hour, minute)
+
+
+def main() -> None:
+    log = SightingLog()
+    for observer, (started, sightings) in CHECKLISTS.items():
+        checklist_id = log.start_checklist(observer, at(started))
+        for species, count, seen in sightings:
+            log.add_sighting(checklist_id, species, count, at(seen))
+        log.submit(checklist_id)
+        print(f"{checklist_id}: {observer}, {len(sightings)} sightings")
+
+    print(f"\ntotals for {DAY}:")
+    for species, count in sorted(log.day_totals(DAY).items()):
+        print(f"  {species}: {count}")
+
+    try:
+        alerts = log.rare_bird_alerts(DAY)
+    except NotImplementedError:
+        print("\nalerts: rare_bird_alerts is not implemented yet")
+        return
+
+    print("\nalerts:")
+    if not alerts:
+        print("  (none)")
+    for alert in alerts:
+        observers = ", ".join(alert.observers)
+        print(f"  {alert.confirmed_at:%H:%M} {alert.species} ({observers})")
+
+
+if __name__ == "__main__":
+    main()
+$q0$)
+on conflict (id) do update set question_id = excluded.question_id, path = excluded.path, content = excluded.content;
+delete from public.question_reference_files where question_id = '14220959-7ac5-51c0-a9e3-b52ee1af4eb3' and id not in ('2d7e9af1-ea5a-5f81-ad00-643e420fc70c', 'e7085057-8300-5e67-a05d-9eeb2d32c378', '571ae4ce-ae81-54b2-a6fa-6b9c6b1cab1a', '9ce3b3e6-20e0-5b4b-a9e8-13e4e051e272');
+insert into public.question_bugs (id, question_id, title, description, file_path, hint) values
+  ('b1ee63fc-8374-59e7-b79c-56ff2be07738', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$Daily count sums instead of taking the highest$q0$, $q0$day_totals adds counts across sightings and checklists. The notes say the daily count is the highest count on any single checklist that day, not the sum (different birders see the same flock). Reference assumption: repeats within one checklist also take the max.$q0$, $q0$question.py$q0$, $q0$Ring-billed Gull is reported as 40, 35 and 22 by three birders at the same sanctuary. What should the daily number be?$q0$),
+  ('eb46410b-d9ec-55f3-a0d4-084eddf9dc36', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$Totals bucketed by checklist start date$q0$, $q0$day_totals filters on checklist.started_at.date() instead of each sighting's seen_at date, so a checklist started at 11:40pm puts next-day sightings on the wrong day (and drops them from the right one).$q0$, $q0$question.py$q0$, $q0$Which date matters: when the checklist started or when the bird was seen?$q0$),
+  ('6b1fa40b-fa03-5509-936a-c515750ee978', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$sp. and slash entries not fully excluded$q0$, $q0$counts_as_species only checks for a lowercase ' sp.' suffix. Slash entries such as Greater/Lesser Scaup are counted as species, and variants like 'Gull SP.' or extra spacing slip through.$q0$, $q0$question.py$q0$, $q0$List every shape of 'not a single species' entry in the notes and try each one.$q0$),
+  ('73a92373-e98f-5269-8f48-8ef4a9815463', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$Species names are not compared ignoring capitalization$q0$, $q0$normalize_species only strips spaces. The notes say names are compared ignoring capitalization AND surrounding spaces, so 'American Robin' and 'american ROBIN' become separate species, and the expected-species lookup is case sensitive too.$q0$, $q0$question.py$q0$, $q0$What do totals look like when two volunteers type the same species with different capitalization?$q0$),
+  ('a5ee2ecf-a6fc-5834-bab5-9f4093e8e40f', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$Submitted checklists can still change$q0$, $q0$add_sighting does not check the submitted flag, so sightings can be added to a checklist after submit(), silently changing totals and alerts. The notes say a submitted checklist cannot change.$q0$, $q0$question.py$q0$, $q0$What happens if a volunteer adds a sighting after pressing submit?$q0$),
+  ('eb424a28-4f2d-53f8-9dc0-e5f8c67b0420', '14220959-7ac5-51c0-a9e3-b52ee1af4eb3', $q0$rare_bird_alerts pitfalls (the implementation task)$q0$, $q0$rare_bird_alerts is not implemented in the starter. Typical mistakes: exclusive 60-minute boundary, one alert per pair instead of one per species per day, counting the same observer twice (or by different capitalization), using the checklist start date or month instead of seen_at, including unsubmitted checklists or sp./slash entries, listing observers outside the window ending at confirmed_at, unsorted output.$q0$, $q0$question.py$q0$, $q0$Write the tests for 60 vs 61 minutes, the same observer twice, and a midnight crossing before you write the algorithm.$q0$)
+on conflict (id) do update set question_id = excluded.question_id, title = excluded.title, description = excluded.description, file_path = excluded.file_path, hint = excluded.hint;
+delete from public.question_bugs where question_id = '14220959-7ac5-51c0-a9e3-b52ee1af4eb3' and id not in ('b1ee63fc-8374-59e7-b79c-56ff2be07738', 'eb46410b-d9ec-55f3-a0d4-084eddf9dc36', '6b1fa40b-fa03-5509-936a-c515750ee978', '73a92373-e98f-5269-8f48-8ef4a9815463', 'a5ee2ecf-a6fc-5834-bab5-9f4093e8e40f', 'eb424a28-4f2d-53f8-9dc0-e5f8c67b0420');
+
 -- question: potluck-raffle
 insert into public.questions (id, slug, title, prompt, constraints, language) values ('71bdef5f-d653-5b96-83f9-6a859866d123', $q0$potluck-raffle$q0$, $q0$Potluck Raffle$q0$, $q0$Your office potluck runs a small raffle to raise money for the cleanup crew. A teammate wrote a tiny Python module for it and says it "basically works", but the organizers have already spotted a few strange results.
 

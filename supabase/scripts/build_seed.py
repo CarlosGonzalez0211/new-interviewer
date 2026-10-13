@@ -45,6 +45,10 @@ def load_question(qdir):
         for p in sorted((qdir / folder).glob("*.py")):
             files[(kind, p.name)] = read(p)
     ref = {p.name: read(p) for p in sorted((qdir / "reference").glob("*.py"))}
+    # Optional hidden acceptance tests: shown to the interviewer only, stored
+    # with the reference files under an "acceptance/" path.
+    for p in sorted((qdir / "acceptance").glob("*.py")):
+        ref["acceptance/" + p.name] = read(p)
     return slug, meta, files, ref
 
 

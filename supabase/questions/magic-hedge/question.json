@@ -1,0 +1,128 @@
+{
+  "title": "Magic Hedge: Rare Bird Alerts",
+  "language": "python",
+  "prompt": "MAGIC HEDGE: review the log and implement rare_bird_alerts\n\nMontrose Point Bird Sanctuary relies on volunteer checklists to understand what birds were present at the Magic Hedge each day. The current starter implementation already captures checklists and sightings, but the sanctuary still cannot flag rare birds reliably when multiple independent observers report them close together in time.\n\nThe team wants this behavior completed in a way that matches the volunteer notes already included in the project. Accuracy matters because daily totals and rare bird alerts are used by staff and birders to decide when to review unusual sightings more closely.\n\nProduct Requirements\n\nComplete the rare bird alert behavior for the existing sighting log. The implementation should follow the repository's volunteer notes and preserve the current starter structure rather than replacing it with a different design.\n- Use the existing checklist, sighting, and alert concepts already present in the codebase.\n- A species should be treated consistently even when capitalization or surrounding spaces differ.\n- Entries that do not identify a single species, including sp. entries and slash entries, must remain in the log but must not count as a species for alerting purposes.\n- A sighting belongs to the calendar day when it was seen, even if the checklist started on a different day.\n- A rare bird alert should be raised only when the same rare species is reported by two different observers within one hour of each other.\n- The returned alerts should be based on submitted checklists only.\n- The alert should capture the normalized species name, the time when the second qualifying report confirms the alert, and the distinct observers involved in that one-hour confirmation window.\n- Review the existing behavior around daily totals and adjust the implementation only where needed to align with the volunteer notes.\n\nTechnical Considerations\n\nThe repository includes starter code, shipped tests, and a deterministic scenario script. Candidates are expected to reason from the written notes, identify missing or incorrect assumptions in the current implementation, and add or update tests to cover the intended behavior. The planted defects in the starter should be fixed through implementation work, not by weakening expectations.",
+  "constraints": "MAGIC HEDGE - Volunteer Notes\n\nScenario\nMontrose Point Bird Sanctuary in Chicago has a patch of shrubs that birders call the Magic Hedge. Volunteers log what they see there, and the sanctuary wants better daily totals and rare bird alerts. (Plover fans still talk about Monty and Rose, who nested on the beach next door.) No bird knowledge is needed.\n- A checklist has one observer, a start time, and a list of sightings.\n- Each sighting has a species name, a count of at least 1, and the time it was seen. All times are sanctuary local time.\n- Species names are compared ignoring capitalization and surrounding spaces.\n- Some entries do not identify a single species: \"sp.\" entries such as gull sp., and slash entries such as Greater/Lesser Scaup. They stay in the log but never count as a species.\n- A species' daily count is the highest count reported on any single checklist that day, not the sum. Different birders see the same flock.\n- A sighting belongs to the day it was seen. A checklist started at 11:40pm can include sightings from the next day.\n- Once submitted, a checklist cannot change.\n- The sanctuary keeps a list of species expected each month. A species not on that month's list is rare. Raise an alert when two different observers report a rare species within an hour of each other.\n\nYour Task\nBefore seeing any code:\n1. Explain how you would model checklists, sightings, and alerts.\n2. Identify anything in these notes that must be clarified before implementation.\n3. Outline how rare_bird_alerts(day) would work and the tests you would want.",
+  "checklist": [
+    "This question is different: the candidate is told the shipped tests pass but the code may deviate from the volunteer notes. They must both find/fix the planted defects AND implement rare_bird_alerts. The visible tests are only the shipped ones (all green on the starter); the hidden acceptance tests are in the reference files.",
+    "Asks clarifying questions before coding: is the daily count the max across checklists (not the sum), and what about repeated sightings of one species within a single checklist (reference assumes per-checklist max, then max across checklists)?",
+    "Asks about the one-hour boundary: is exactly 60 minutes inclusive? (Reference: yes, 60 counts, 61 does not.)",
+    "Asks whether there is one alert per species per day or many, and what confirmed_at / observers should contain (reference: one alert per species per day, the earliest confirmation; observers = distinct observers with a sighting in the 60 minutes up to confirmed_at).",
+    "Asks about observer identity (case/spacing of names, same observer on two checklists) and whether a lone observer repeating a sighting should alert (it should not).",
+    "Asks about midnight and cross-day behavior: a checklist started at 11:40pm with sightings after midnight; a pair of reports straddling midnight alerts on neither day; which month decides 'expected' (month of seen_at).",
+    "Reads the notes against the code line by line instead of trusting that the shipped tests pass; notices day_totals sums instead of taking the highest count, buckets by checklist start date, and that normalize_species/counts_as_species are too weak.",
+    "Notices that a submitted checklist can still be modified through add_sighting and fixes it.",
+    "Writes tests for the gaps first (they fail), then fixes one defect at a time, instead of weakening expectations or rewriting the design.",
+    "Reasons about the time-window algorithm and its complexity (sort per species + sliding window, O(n log n), versus comparing all pairs O(n^2)).",
+    "Adds tests for gaps (boundary 60/61, same observer, unsubmitted, month changes, sp./slash, midnight, ordering of alerts) and uses the AI assistant critically, verifying its output against the notes.",
+    "Interviewer talking point: the comments in scenario.py are slightly inconsistent with its data (Ana's warbler is at 08:11 and Ben's at 07:45, while the comment says Ben's is 35 minutes after Ana's; it is actually 26 minutes before). See whether the candidate notices rather than trusting comments. Expected scenario result: Ring-billed Gull 40 (max of 40/35/22), Robin 6, Blackbird 8, Kirtland's Warbler 1, Piping Plover 1; one alert for Kirtland's Warbler at 08:11 (Ana, Ben); the lone Piping Plover does not alert."
+  ],
+  "followups": [
+    "Within a single checklist, should two sightings of the same species be summed or take the max? What did you assume and why?",
+    "The scenario.py comment says Ben's warbler is 35 minutes after Ana's, but the data shows it 26 minutes before. How did you decide which to trust?",
+    "How would your rare_bird_alerts scale to a year of data or a large sanctuary? What would you index or precompute?",
+    "What if the sanctuary wants an alert per confirmation window (a second alert hours later) instead of one per species per day?",
+    "How would you handle time zones or the daylight-saving change, given that all times are naive local times?",
+    "How would you model expected-species lists that change over time, and is a taxonomy change a data problem or a code problem?",
+    "How would you make a submitted checklist truly immutable (frozen dataclass, tuple of sightings, copy on read)?"
+  ],
+  "rubric": [
+    {
+      "id": "clarification",
+      "label": "Clarifying questions before coding (sum vs max, boundary, one alert, cross-day)",
+      "weight": 3
+    },
+    {
+      "id": "debugging",
+      "label": "Reads notes against code; finds the planted defects methodically",
+      "weight": 3
+    },
+    {
+      "id": "correctness",
+      "label": "Correctness of fixes and of rare_bird_alerts",
+      "weight": 3
+    },
+    {
+      "id": "testing",
+      "label": "Writes tests for gaps and boundaries (does not weaken expectations)",
+      "weight": 2
+    },
+    {
+      "id": "ai_use",
+      "label": "Uses the AI assistant critically",
+      "weight": 2
+    },
+    {
+      "id": "communication",
+      "label": "Explains reasoning clearly while working",
+      "weight": 2
+    }
+  ],
+  "bugs": [
+    {
+      "title": "Daily count sums instead of taking the highest",
+      "description": "day_totals adds counts across sightings and checklists. The notes say the daily count is the highest count on any single checklist that day, not the sum (different birders see the same flock). Reference assumption: repeats within one checklist also take the max.",
+      "file_path": "question.py",
+      "hint": "Ring-billed Gull is reported as 40, 35 and 22 by three birders at the same sanctuary. What should the daily number be?",
+      "caught_by": [
+        "test_acc_daily_count_is_highest_across_checklists",
+        "test_acc_daily_count_takes_max_within_one_checklist"
+      ]
+    },
+    {
+      "title": "Totals bucketed by checklist start date",
+      "description": "day_totals filters on checklist.started_at.date() instead of each sighting's seen_at date, so a checklist started at 11:40pm puts next-day sightings on the wrong day (and drops them from the right one).",
+      "file_path": "question.py",
+      "hint": "Which date matters: when the checklist started or when the bird was seen?",
+      "caught_by": [
+        "test_acc_sighting_belongs_to_day_it_was_seen",
+        "test_acc_checklist_started_earlier_does_not_claim_next_day_sightings"
+      ]
+    },
+    {
+      "title": "sp. and slash entries not fully excluded",
+      "description": "counts_as_species only checks for a lowercase ' sp.' suffix. Slash entries such as Greater/Lesser Scaup are counted as species, and variants like 'Gull SP.' or extra spacing slip through.",
+      "file_path": "question.py",
+      "hint": "List every shape of 'not a single species' entry in the notes and try each one.",
+      "caught_by": [
+        "test_acc_slash_entries_are_not_species",
+        "test_acc_sp_entries_ignore_case_and_spacing"
+      ]
+    },
+    {
+      "title": "Species names are not compared ignoring capitalization",
+      "description": "normalize_species only strips spaces. The notes say names are compared ignoring capitalization AND surrounding spaces, so 'American Robin' and 'american ROBIN' become separate species, and the expected-species lookup is case sensitive too.",
+      "file_path": "question.py",
+      "hint": "What do totals look like when two volunteers type the same species with different capitalization?",
+      "caught_by": [
+        "test_acc_species_names_ignore_case_and_surrounding_spaces",
+        "test_acc_expected_species_lookup_ignores_case_and_spaces"
+      ]
+    },
+    {
+      "title": "Submitted checklists can still change",
+      "description": "add_sighting does not check the submitted flag, so sightings can be added to a checklist after submit(), silently changing totals and alerts. The notes say a submitted checklist cannot change.",
+      "file_path": "question.py",
+      "hint": "What happens if a volunteer adds a sighting after pressing submit?",
+      "caught_by": [
+        "test_acc_submitted_checklist_rejects_new_sightings"
+      ]
+    },
+    {
+      "title": "rare_bird_alerts pitfalls (the implementation task)",
+      "description": "rare_bird_alerts is not implemented in the starter. Typical mistakes: exclusive 60-minute boundary, one alert per pair instead of one per species per day, counting the same observer twice (or by different capitalization), using the checklist start date or month instead of seen_at, including unsubmitted checklists or sp./slash entries, listing observers outside the window ending at confirmed_at, unsorted output.",
+      "file_path": "question.py",
+      "hint": "Write the tests for 60 vs 61 minutes, the same observer twice, and a midnight crossing before you write the algorithm.",
+      "caught_by": [
+        "test_alert_confirmed_at_second_report",
+        "test_alert_exactly_sixty_minutes_counts",
+        "test_alert_sixty_one_minutes_does_not_count",
+        "test_alert_same_observer_twice_never_confirms",
+        "test_alert_ignores_unsubmitted_checklists",
+        "test_alert_only_one_alert_per_species_per_day",
+        "test_alert_lists_only_observers_up_to_confirmation_sorted",
+        "test_alert_results_sorted_by_time_then_species"
+      ]
+    }
+  ]
+}

@@ -33,6 +33,20 @@ def run_in_tmp(qdir, code_dir):
     try:
         for src in sorted((qdir / code_dir).glob("*.py")):
             shutil.copy(src, tmp / src.name)
+        for folder in ("tests", "acceptance"):  # acceptance = hidden tests, optional
+            for src in sorted((qdir / folder).glob("*.py")):
+                shutil.copy(src, tmp / src.name)
+        return json.loads(harness.run(str(tmp)))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def run_visible(qdir):
+    """Visible tests only (no hidden acceptance tests) against the buggy code."""
+    tmp = Path(tempfile.mkdtemp(prefix="verify_v_"))
+    try:
+        for src in sorted((qdir / "buggy").glob("*.py")):
+            shutil.copy(src, tmp / src.name)
         for src in sorted((qdir / "tests").glob("*.py")):
             shutil.copy(src, tmp / src.name)
         return json.loads(harness.run(str(tmp)))
@@ -47,8 +61,8 @@ def check_question(qdir):
                 "followups", "rubric", "bugs"):
         if key not in meta:
             errors.append("question.json missing %r" % key)
-    if not 3 <= len(meta.get("bugs", [])) <= 5:
-        errors.append("expected 3-5 bugs, found %d" % len(meta.get("bugs", [])))
+    if not 3 <= len(meta.get("bugs", [])) <= 8:
+        errors.append("expected 3-8 bugs, found %d" % len(meta.get("bugs", [])))
 
     ref_names = {p.name for p in (qdir / "reference").glob("*.py")}
     bug_names = {p.name for p in (qdir / "buggy").glob("*.py")}
@@ -59,8 +73,20 @@ def check_question(qdir):
         if bug["file_path"] not in bug_names:
             errors.append("bug %r points at unknown file %s" % (bug["title"], bug["file_path"]))
 
+    visible = run_visible(qdir)
+    hidden = {p.name for p in (qdir / "acceptance").glob("*.py")}
+    if hidden:
+        # Hidden-acceptance questions: the visible tests must not leak the bugs.
+        vbad = [r["name"] for r in visible["results"] if r["status"] != "passed"]
+        print("  visible tests on buggy: %d, %d not passing" % (len(visible["results"]), len(vbad)))
+        if not visible["results"]:
+            errors.append("no visible tests")
+        if vbad:
+            errors.append("visible tests fail on buggy code (would leak bugs): %s" % vbad)
     buggy = run_in_tmp(qdir, "buggy")
     status = {r["name"]: r["status"] for r in buggy["results"]}
+    if len(status) != len(buggy["results"]):
+        errors.append("duplicate test names across test files")
     failing = sorted(n for n, s in status.items() if s != "passed")
     print("  buggy: %d tests, %d failing" % (len(status), len(failing)))
     if not failing:
