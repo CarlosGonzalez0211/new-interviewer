@@ -4,6 +4,16 @@ import { buildSystemInstruction, trimHistory, HISTORY_LIMIT } from "./prompt.ts"
 import type { CodeFile, HistoryMessage, QuestionInfo } from "./prompt.ts";
 import { buildGeminiRequest, parseGeminiResponse, GeminiError } from "./gemini.ts";
 import type { GeminiRequestInit } from "./gemini.ts";
+import {
+  FALLBACK_MODELS,
+  MODELS_CACHE_TTL_MS,
+  buildAttemptChain,
+  collectModels,
+  createModelsCache,
+  effectiveModel,
+  isRetryable,
+} from "./models.ts";
+import type { ModelOption, ModelsCache } from "./models.ts";
 
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -34,9 +44,14 @@ export interface Deps {
       sessionId: string,
       role: "user" | "model",
       content: string,
+      model?: string,
     ): Promise<{ id: string }>;
   };
   callGemini(req: GeminiRequestInit): Promise<{ status: number; json: unknown }>;
+  /** GET a Google API URL with the given headers (ListModels). Without it the models action degrades. */
+  fetchJson?(url: string, headers: Record<string, string>): Promise<{ status: number; json: unknown }>;
+  /** In-memory ListModels cache; defaults to a module-level one. Injected in tests. */
+  modelsCache?: ModelsCache;
   now(): Date;
   env: { GEMINI_API_KEY?: string; GEMINI_MODEL?: string; GEMINI_FALLBACK_MODEL?: string };
   /** Pause between retries; injected so tests do not wait. */
@@ -50,9 +65,34 @@ function json(status: number, body: unknown): Response {
   });
 }
 
-const DEFAULT_FALLBACK_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"];
-/** Statuses where trying again or switching model can help (overload, per-model quota, retired model, server error). */
-const RETRYABLE_STATUSES = new Set([404, 429, 500, 503]);
+const defaultModelsCache = createModelsCache();
+
+/** `{ action: 'models' }`: usable Gemini chat models straight from Google's ListModels (cached 10 min). */
+async function handleModels(deps: Deps): Promise<Response> {
+  const defaultId = effectiveModel(deps.env.GEMINI_MODEL);
+  const cache = deps.modelsCache ?? defaultModelsCache;
+  const nowMs = deps.now().getTime();
+  if (cache.value && nowMs - cache.at < MODELS_CACHE_TTL_MS) {
+    return json(200, { models: cache.value, default: defaultId });
+  }
+  const apiKey = deps.env.GEMINI_API_KEY;
+  let models: ModelOption[] | null = null;
+  if (apiKey && deps.fetchJson) {
+    const fetchJson = deps.fetchJson;
+    try {
+      models = await collectModels((url) => fetchJson(url, { "x-goog-api-key": apiKey }));
+    } catch {
+      models = null;
+    }
+  }
+  if (!models) {
+    console.error(JSON.stringify({ event: "list_models_failed" }));
+    return json(200, { models: FALLBACK_MODELS, default: defaultId, degraded: true });
+  }
+  cache.value = models;
+  cache.at = nowMs;
+  return json(200, { models, default: defaultId });
+}
 
 export async function handleChat(req: Request, deps: Deps): Promise<Response> {
   if (req.method === "OPTIONS") {
@@ -73,9 +113,12 @@ export async function handleChat(req: Request, deps: Deps): Promise<Response> {
     } catch {
       return json(400, { error: "Request body must be valid JSON." });
     }
+    if (body !== null && typeof body === "object" && (body as { action?: unknown }).action === "models") {
+      return await handleModels(deps);
+    }
     const parsed = parseChatRequest(body);
     if (!parsed.ok) return json(400, { error: parsed.error });
-    const { session_id, message } = parsed.value;
+    const { session_id, message, model: requestedModel } = parsed.value;
 
     const session = await deps.data.getSession(session_id);
     if (!session) return json(404, { error: "Session not found." });
@@ -113,31 +156,22 @@ export async function handleChat(req: Request, deps: Deps): Promise<Response> {
 
     // Overload, per-model quota, retired model and server errors are often transient or model-specific:
     // retry the primary model once (after a pause), then walk a chain of fallback models.
-    const fallbacks = (deps.env.GEMINI_FALLBACK_MODEL ?? "")
-      .split(",")
-      .map((m) => m.trim())
-      .filter(Boolean);
-    const attempts: (string | undefined)[] = [
-      deps.env.GEMINI_MODEL,
-      deps.env.GEMINI_MODEL,
-      ...(fallbacks.length ? fallbacks : DEFAULT_FALLBACK_MODELS),
-    ];
+    // The primary is the model the caller picked, else the server default.
+    const primary = requestedModel ?? deps.env.GEMINI_MODEL;
+    const attempts = buildAttemptChain(primary, deps.env.GEMINI_FALLBACK_MODEL);
     const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
     let reply = "";
+    let answeredBy = effectiveModel(primary);
     try {
       for (let i = 0; i < attempts.length; i++) {
         try {
           const res = await deps.callGemini(buildReq(attempts[i]));
           reply = parseGeminiResponse(res.status, res.json);
+          answeredBy = effectiveModel(attempts[i]);
           break;
         } catch (err) {
-          const retryable =
-            err instanceof GeminiError &&
-            (err.kind === "overloaded" ||
-              err.kind === "rate_limited" ||
-              (err.status !== undefined && RETRYABLE_STATUSES.has(err.status)));
-          if (!retryable || i === attempts.length - 1) throw err;
+          if (!isRetryable(err) || i === attempts.length - 1) throw err;
           console.error(
             JSON.stringify({ event: "gemini_retry", session_id, attempt: i + 1, model: attempts[i], detail: (err as Error).message }),
           );
@@ -158,8 +192,13 @@ export async function handleChat(req: Request, deps: Deps): Promise<Response> {
     }
 
     await deps.data.insertMessage(session_id, "user", message);
-    const saved = await deps.data.insertMessage(session_id, "model", reply);
-    return json(200, { reply, message_id: saved.id });
+    const saved = await deps.data.insertMessage(session_id, "model", reply, answeredBy);
+    return json(200, {
+      reply,
+      message_id: saved.id,
+      model: answeredBy,
+      fallback_used: answeredBy !== effectiveModel(primary),
+    });
   } catch (e) {
     console.error("ai-chat internal error:", e instanceof Error ? e.message : "unknown");
     return json(500, { error: "Internal error." });

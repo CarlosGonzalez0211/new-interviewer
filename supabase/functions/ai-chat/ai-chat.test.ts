@@ -145,7 +145,7 @@ describe("gemini response", () => {
 });
 
 function makeDeps(over: { user?: string | null; session?: any; env?: any; gemini?: any; count?: number } = {}) {
-  const inserted: { role: string; content: string }[] = [];
+  const inserted: { role: string; content: string; model?: string }[] = [];
   const session =
     over.session === undefined
       ? { id: SID, question_id: "q1", interviewee_id: USER, phase: "debugging" }
@@ -165,8 +165,8 @@ function makeDeps(over: { user?: string | null; session?: any; env?: any; gemini
       getSessionFiles: async () => [{ path: "a.py", content: "x = 1", kind: "code" }],
       getHistory: async () => [],
       countUserMessagesSince: async () => over.count ?? 0,
-      insertMessage: async (_s, role, content) => {
-        inserted.push({ role, content });
+      insertMessage: async (_s, role, content, model) => {
+        inserted.push(model === undefined ? { role, content } : { role, content, model });
         return { id: `msg-${inserted.length}` };
       },
     },
@@ -222,10 +222,15 @@ describe("handler", () => {
     const { deps, inserted, callGemini } = makeDeps();
     const r = await handleChat(post(good), deps);
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ reply: "the reply", message_id: "msg-2" });
+    expect(await r.json()).toEqual({
+      reply: "the reply",
+      message_id: "msg-2",
+      model: "gemini-3.8-flash",
+      fallback_used: false,
+    });
     expect(inserted).toEqual([
       { role: "user", content: "help" },
-      { role: "model", content: "the reply" },
+      { role: "model", content: "the reply", model: "gemini-3.8-flash" },
     ]);
     const sent = JSON.parse(callGemini.mock.calls[0][0].init.body);
     expect(sent.systemInstruction.parts[0].text).toContain("x = 1");

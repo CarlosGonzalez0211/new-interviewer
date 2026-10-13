@@ -6,6 +6,13 @@ import {
 } from '../../../supabase/functions/ai-chat/prompt.ts'
 import type { CodeFile, HistoryMessage } from '../../../supabase/functions/ai-chat/prompt.ts'
 import { parseChatRequest } from '../../../supabase/functions/ai-chat/validate.ts'
+import {
+  buildAttemptChain,
+  collectModels,
+  effectiveModel,
+  FALLBACK_MODELS,
+  isRetryable,
+} from '../../../supabase/functions/ai-chat/models.ts'
 import type { FakeDb, Row } from './db'
 import type { AiSettings } from '../settings'
 
@@ -56,9 +63,12 @@ async function readJson(res: Response): Promise<unknown> {
  * shape, but it reads the fake DB and calls Google directly from the browser with the key from localStorage.
  */
 export async function handleAiChat(db: FakeDb, body: unknown, deps: AiDeps): Promise<FunctionResult> {
+  if (typeof body === 'object' && body !== null && (body as { action?: unknown }).action === 'models') {
+    return handleModels(deps)
+  }
   const parsed = parseChatRequest(body)
   if (!parsed.ok) return fnError(400, parsed.error)
-  const { session_id, message } = parsed.value
+  const { session_id, message, model: requestedModel } = parsed.value
 
   const session = db.find('sessions', { id: session_id })
   if (!session) return fnError(404, 'Session not found.')
@@ -77,41 +87,70 @@ export async function handleAiChat(db: FakeDb, body: unknown, deps: AiDeps): Pro
     .slice(-HISTORY_LIMIT)
     .map((r) => ({ role: r.role === 'model' ? 'model' : 'user', content: String(r.content ?? '') }))
 
-  const store = (role: 'user' | 'model', content: string): Row =>
-    db.insert('ai_messages', { session_id, role, content })
+  const store = (role: 'user' | 'model', content: string, model?: string): Row =>
+    db.insert('ai_messages', { session_id, role, content, model: model ?? null })
 
-  const { apiKey, model } = deps.getSettings()
+  const { apiKey, model: defaultModel } = deps.getSettings()
   if (!apiKey) {
     store('user', message)
     const saved = store('model', CANNED_REPLY)
-    return { status: 200, body: { reply: CANNED_REPLY, message_id: saved.id } }
+    return { status: 200, body: { reply: CANNED_REPLY, message_id: saved.id, model: null, fallback_used: false } }
   }
 
-  const req = buildGeminiRequest({
-    apiKey,
-    model,
-    systemInstruction: buildSystemInstruction(
-      { title: String(question.title), prompt: String(question.prompt), constraints: String(question.constraints ?? '') },
-      files,
-    ),
-    history: trimHistory(history),
-    userMessage: message,
-  })
+  const systemInstruction = buildSystemInstruction(
+    { title: String(question.title), prompt: String(question.prompt), constraints: String(question.constraints ?? '') },
+    files,
+  )
+  const primary = requestedModel ?? defaultModel
+  const attempts = buildAttemptChain(primary)
+  const fetchImpl = deps.fetchImpl ?? fetch
 
-  let reply: string
-  let status = 0
-  try {
-    const res = await (deps.fetchImpl ?? fetch)(req.url, req.init)
-    status = res.status
-    reply = parseGeminiResponse(res.status, await readJson(res))
-  } catch (e) {
-    if (e instanceof GeminiError) return upstreamError(status, e)
-    return fnError(502, 'Could not reach Google. Check your network connection and try again.')
+  // Same chain as the Edge Function (primary twice, then fallbacks), minus the pause between the first two.
+  let reply = ''
+  let answeredBy = effectiveModel(primary)
+  for (let i = 0; i < attempts.length; i++) {
+    let status = 0
+    try {
+      const req = buildGeminiRequest({ apiKey, model: attempts[i], systemInstruction, history: trimHistory(history), userMessage: message })
+      const res = await fetchImpl(req.url, req.init)
+      status = res.status
+      reply = parseGeminiResponse(res.status, await readJson(res))
+      answeredBy = effectiveModel(attempts[i])
+      break
+    } catch (e) {
+      if (e instanceof GeminiError) {
+        if (isRetryable(e) && i < attempts.length - 1) continue
+        return upstreamError(status, e)
+      }
+      return fnError(502, 'Could not reach Google. Check your network connection and try again.')
+    }
   }
 
   store('user', message)
-  const saved = store('model', reply)
-  return { status: 200, body: { reply, message_id: saved.id } }
+  const saved = store('model', reply, answeredBy)
+  return {
+    status: 200,
+    body: { reply, message_id: saved.id, model: answeredBy, fallback_used: answeredBy !== effectiveModel(primary) },
+  }
+}
+
+/** `{ action: 'models' }`: real ListModels from the browser with the stored key, else the static fallback list. */
+async function handleModels(deps: AiDeps): Promise<FunctionResult> {
+  const { apiKey, model } = deps.getSettings()
+  const fetchImpl = deps.fetchImpl ?? fetch
+  let models = null
+  if (apiKey) {
+    try {
+      models = await collectModels(async (url) => {
+        const res = await fetchImpl(url, { method: 'GET', headers: { 'x-goog-api-key': apiKey } })
+        return { status: res.status, json: await readJson(res) }
+      })
+    } catch {
+      models = null
+    }
+  }
+  if (!models) return { status: 200, body: { models: FALLBACK_MODELS, default: model, degraded: true } }
+  return { status: 200, body: { models, default: model } }
 }
 
 /** Tiny real call used by the "Test key" button. Never logs or returns the key. */

@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 const here = dirname(fileURLToPath(import.meta.url))
 const schemaSql = readFileSync(join(here, '../migrations/20261009000000_schema.sql'), 'utf8')
 const workspaceSql = readFileSync(join(here, '../migrations/20261013000000_workspace.sql'), 'utf8')
+const aiModelSql = readFileSync(join(here, '../migrations/20261014000000_ai_message_model.sql'), 'utf8')
 const publicStartSql = readFileSync(join(here, '../migrations/20261012000000_public_start.sql'), 'utf8')
 
 const ALICE = { id: '00000000-0000-0000-0000-00000000000a', email: 'alice@example.com' }
@@ -68,6 +69,7 @@ beforeAll(async () => {
   await db.exec(schemaSql)
   await db.exec(publicStartSql)
   await db.exec(workspaceSql)
+  await db.exec(aiModelSql)
   // Supabase grants service_role everything via default privileges; emulate.
   await db.exec('grant all on all tables in schema public to service_role')
   await db.exec(`
@@ -284,6 +286,28 @@ describe('(7) ai_messages', () => {
     expect(await asUser(BOB, `select * from ai_messages where session_id = $1`, [sid])).toHaveLength(1)
     expect(await asUser(ALICE, `select * from ai_messages where session_id = $1`, [sid])).toHaveLength(1)
     expect(await asUser(CAROL, `select * from ai_messages`)).toHaveLength(0)
+  })
+})
+
+describe('(7b) ai_messages.model', () => {
+  it('column exists (nullable text); clients still cannot insert; participants read it; outsiders cannot', async () => {
+    const sid = await newSession()
+    await asUser(ALICE, `select * from set_phase($1, 'debugging')`, [sid])
+    const [col] = await db.query<any>(
+      `select data_type, is_nullable from information_schema.columns where table_name = 'ai_messages' and column_name = 'model'`,
+    ).then((r) => r.rows)
+    expect(col).toEqual({ data_type: 'text', is_nullable: 'YES' })
+    const withModel = `insert into ai_messages (session_id, role, content, model) values ($1, 'model', 'hi', 'gemini-3.8-flash')`
+    await expect(asUser(BOB, withModel, [sid])).rejects.toThrow()
+    await expect(asUser(ALICE, withModel, [sid])).rejects.toThrow()
+    await as('service_role', null, withModel, [sid])
+    await as('service_role', null, `insert into ai_messages (session_id, role, content) values ($1, 'user', 'q')`, [sid])
+    for (const u of [ALICE, BOB]) {
+      const rows = await asUser<any>(u, `select role, model from ai_messages where session_id = $1 order by created_at, role`, [sid])
+      expect(rows.map((r) => r.model).sort()).toEqual(['gemini-3.8-flash', null])
+    }
+    expect(await asUser(CAROL, `select model from ai_messages`)).toHaveLength(0)
+    await expect(asUser(BOB, `update ai_messages set model = 'x' where session_id = $1`, [sid])).rejects.toThrow()
   })
 })
 

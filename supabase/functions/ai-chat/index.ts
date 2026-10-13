@@ -74,11 +74,11 @@ const deps: Deps = {
       if (error) throw new Error(error.message);
       return count ?? 0;
     },
-    async insertMessage(sessionId, role, content) {
+    async insertMessage(sessionId, role, content, model) {
       const row = must(
         await admin
           .from("ai_messages")
-          .insert({ session_id: sessionId, role, content })
+          .insert({ session_id: sessionId, role, content, ...(model ? { model } : {}) })
           .select("id")
           .single(),
       );
@@ -87,6 +87,16 @@ const deps: Deps = {
   },
   async callGemini(req) {
     const res = await fetch(req.url, req.init);
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+    return { status: res.status, json: body };
+  },
+  async fetchJson(url, headers) {
+    const res = await fetch(url, { method: "GET", headers });
     let body: unknown = null;
     try {
       body = await res.json();

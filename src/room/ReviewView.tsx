@@ -292,7 +292,7 @@ export default function ReviewView({ session, question, role }: { session: Sessi
           <summary>AI transcript ({ai.items.length} messages)</summary>
           <div className="room-chat-list">
             {ai.items.map((m) => (
-              <MessageBubble key={m.id} role={m.role} content={m.content} at={m.created_at} />
+              <MessageBubble key={m.id} role={m.role} content={m.content} at={m.created_at} model={m.model} />
             ))}
             {ai.items.length === 0 && <p className="room-muted">No AI conversation.</p>}
           </div>

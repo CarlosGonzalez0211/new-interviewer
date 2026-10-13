@@ -216,7 +216,7 @@ export default function InterviewerRoom({ session, userId }: { session: Session;
                       {ai.error && <p className="room-error">{ai.error}</p>}
                       {!ai.loading && ai.items.length === 0 && <p className="room-muted">The interviewee has not used the AI assistant yet.</p>}
                       {ai.items.map((m) => (
-                        <MessageBubble key={m.id} role={m.role} content={m.content} at={m.created_at} />
+                        <MessageBubble key={m.id} role={m.role} content={m.content} at={m.created_at} model={m.model} />
                       ))}
                     </div>
                   ),

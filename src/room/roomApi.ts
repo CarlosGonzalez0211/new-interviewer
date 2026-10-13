@@ -12,6 +12,8 @@ import type {
 } from '../types/db'
 import type { BugState } from '../types/db'
 import type { TestRunResult } from '../runner/types'
+import { parseModelList } from './modelPicker'
+import type { ModelList } from './modelPicker'
 
 function fail(action: string, error: { message?: string } | null | undefined): never {
   throw new Error(`${action}: ${error?.message ?? 'unknown error'}`)
@@ -57,27 +59,66 @@ export async function listAiMessages(sessionId: string): Promise<AiMessage[]> {
 export interface AiChatReply {
   reply: string
   message_id: string
+  /** Model that actually answered. */
+  model: string | null
+  /** True when the requested/default model failed and another one answered. */
+  fallback_used: boolean
 }
 
-export async function invokeAiChat(sessionId: string, message: string): Promise<AiChatReply> {
-  const { data, error } = await supabase.functions.invoke('ai-chat', { body: { session_id: sessionId, message } })
-  if (error) {
-    let detail = error.message
-    if (error instanceof FunctionsHttpError) {
-      try {
-        const body: unknown = await error.context.json()
-        if (typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string') {
-          detail = body.error
-        }
-      } catch {
-        // keep generic message
+/** Turn a functions.invoke error into a readable message (reads the { error } body of HTTP errors). */
+async function describeInvokeError(error: Error): Promise<string> {
+  let detail = error.message
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const body: unknown = await error.context.json()
+      if (typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string') {
+        detail = body.error
       }
+    } catch {
+      // keep generic message
     }
-    throw new Error(detail)
   }
+  return detail
+}
+
+let modelListPromise: Promise<ModelList> | null = null
+
+/** Usable Gemini models from the ai-chat function (Google ListModels). Cached per page load; failures are not cached. */
+export function loadAiModels(): Promise<ModelList> {
+  if (modelListPromise) return modelListPromise
+  const p = (async () => {
+    const { data, error } = await supabase.functions.invoke('ai-chat', { body: { action: 'models' } })
+    if (error) throw new Error(await describeInvokeError(error))
+    const list = parseModelList(data)
+    if (!list) throw new Error('Unexpected models response')
+    return list
+  })()
+  modelListPromise = p
+  // A degraded list (Google unreachable) or a failure should be retried on the next mount.
+  p.then(
+    (l) => {
+      if (l.degraded && modelListPromise === p) modelListPromise = null
+    },
+    () => {
+      if (modelListPromise === p) modelListPromise = null
+    },
+  )
+  return p
+}
+
+export async function invokeAiChat(sessionId: string, message: string, model?: string | null): Promise<AiChatReply> {
+  const body: Record<string, unknown> = { session_id: sessionId, message }
+  if (model) body.model = model
+  const { data, error } = await supabase.functions.invoke('ai-chat', { body })
+  if (error) throw new Error(await describeInvokeError(error))
   const d = data as Partial<AiChatReply> | null
   if (!d || typeof d.reply !== 'string') throw new Error('The AI assistant returned an unexpected response')
-  return { reply: d.reply, message_id: String(d.message_id ?? '') }
+  return {
+    reply: d.reply,
+    message_id: String(d.message_id ?? ''),
+    model: typeof d.model === 'string' && d.model ? d.model : null,
+    fallback_used: d.fallback_used === true,
+  }
 }
 
 export async function getQuestionPrivate(questionId: string): Promise<QuestionPrivate | null> {

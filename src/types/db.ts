@@ -99,6 +99,8 @@ export interface AiMessage {
   role: 'user' | 'model'
   content: string
   created_at: string
+  /** Gemini model that produced a 'model' reply (null for user messages and older rows). */
+  model?: string | null
 }
 
 export interface BugStatus {
