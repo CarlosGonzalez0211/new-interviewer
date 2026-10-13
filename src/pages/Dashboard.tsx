@@ -4,6 +4,7 @@ import { useAuth } from '../auth/context'
 import { listMySessions } from '../lib/api'
 import type { SessionWithQuestion } from '../types/db'
 import { Badge, Card, ErrorMessage, Spinner } from '../components/ui'
+import { finalDuration, formatDuration } from '../room/clock'
 import type { BadgeTone } from '../components/ui/Badge'
 
 const PHASE_TONE: Record<string, BadgeTone> = { briefing: 'amber', debugging: 'blue', completed: 'green' }
@@ -53,6 +54,7 @@ export default function Dashboard() {
             const isInterviewer = s.interviewer_id ? s.interviewer_id === user?.id : s.interviewer_email === myEmail
             const role = isInterviewer ? 'interviewer' : 'interviewee'
             const other = isInterviewer ? s.interviewee_email : s.interviewer_email
+            const duration = s.phase === 'completed' ? finalDuration(s) : null
             return (
               <li key={s.id}>
                 <Link to={`/session/${s.id}`} className="card card-link row">
@@ -60,6 +62,7 @@ export default function Dashboard() {
                     <strong>{s.question?.title ?? 'Question'}</strong>
                     <div className="muted small">
                       With {other || 'unknown'} · {new Date(s.created_at).toLocaleString()}
+                      {duration !== null && ` · Duration ${formatDuration(duration)}`}
                     </div>
                   </div>
                   <Badge tone={isInterviewer ? 'purple' : 'neutral'}>{role}</Badge>

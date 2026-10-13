@@ -84,12 +84,15 @@ export function createFakeSupabase(options: FakeSupabaseOptions = {}) {
       if (!row) return rpcFail('session not found', 'P0002')
       if (me.id === row.interviewer_id || me.id === row.interviewee_id) return { data: structuredClone(row), error: null }
       const email = me.email.toLowerCase()
-      if (row.interviewer_id == null && row.interviewer_email === email) {
-        return { data: db.updateRow('sessions', row, { interviewer_id: me.id }), error: null }
+      const fill = (slot: 'interviewer_id' | 'interviewee_id') => {
+        const other = slot === 'interviewer_id' ? row.interviewee_id : row.interviewer_id
+        // Mirrors claim_session: the second slot being filled starts the interview clock (once).
+        const patch: Record<string, unknown> = { [slot]: me.id }
+        if (row.started_at == null && other != null) patch.started_at = nowIso()
+        return { data: db.updateRow('sessions', row, patch), error: null }
       }
-      if (row.interviewee_id == null && row.interviewee_email === email) {
-        return { data: db.updateRow('sessions', row, { interviewee_id: me.id }), error: null }
-      }
+      if (row.interviewer_id == null && row.interviewer_email === email) return fill('interviewer_id')
+      if (row.interviewee_id == null && row.interviewee_email === email) return fill('interviewee_id')
       return rpcFail('no open slot for this account on this session', '42501')
     },
 
@@ -117,7 +120,7 @@ export function createFakeSupabase(options: FakeSupabaseOptions = {}) {
             kind: qf.kind === 'buggy' ? 'code' : 'test',
           })
         }
-        return { data: db.updateRow('sessions', row, { phase: next, debugging_started_at: nowIso() }), error: null }
+        return { data: db.updateRow('sessions', row, { phase: next, debugging_started_at: nowIso(), started_at: row.started_at ?? nowIso() }), error: null }
       }
       return { data: db.updateRow('sessions', row, { phase: next, completed_at: nowIso() }), error: null }
     },

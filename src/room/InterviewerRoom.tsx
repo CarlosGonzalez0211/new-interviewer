@@ -3,7 +3,6 @@ import { DiffEditor } from '@monaco-editor/react'
 import { useCollab, useYText } from '../collab'
 import type { Collab } from '../collab'
 import { useMonacoTheme } from '../hooks/useMonacoTheme'
-import { useNow } from '../hooks/useNow'
 import { useRealtimeTable } from '../hooks/useRealtimeTable'
 import { setPhase } from '../lib/api'
 import type { AiMessage, BugState, BugStatus, QuestionBug, QuestionPrivate, QuestionReferenceFile, Session, SessionNote, TestRun } from '../types/db'
@@ -30,7 +29,7 @@ import {
   upsertBugStatus,
 } from './roomApi'
 import TestResultsPanel, { RunSummary } from './TestResultsPanel'
-import { elapsedSince, formatElapsed } from './time'
+import SessionClock from './SessionClock'
 import './room.css'
 
 const msgKey = (r: Partial<AiMessage>) => r.id
@@ -90,7 +89,6 @@ function DiffTab({ collab, refFiles }: { collab: Collab; refFiles: QuestionRefer
 
 export default function InterviewerRoom({ session, userId }: { session: Session; userId: string }) {
   const sessionId = session.id
-  const now = useNow(1000)
 
   const user = useMemo(() => collabUserFor({ userId, role: 'interviewer', email: session.interviewer_email }), [userId, session.interviewer_email])
   const collabSession = useMemo(() => ({ id: sessionId, phase: session.phase }), [sessionId, session.phase])
@@ -134,7 +132,6 @@ export default function InterviewerRoom({ session, userId }: { session: Session;
   }, [session.question_id])
 
   const startedAt = session.debugging_started_at
-  const elapsed = elapsedSince(startedAt, session.completed_at ?? now)
 
   const latestRun = runs.items.length > 0 ? runs.items[runs.items.length - 1] : null
   const selectedRun = runs.items.find((r) => r.id === selectedRunId) ?? latestRun
@@ -174,9 +171,7 @@ export default function InterviewerRoom({ session, userId }: { session: Session;
       <div className="room-bar">
         <StatusBadge status={collab?.status ?? 'loading'} />
         <span className="spacer" />
-        <span className="room-badge" aria-label="Elapsed time since debugging started">
-          Elapsed <span className="room-mono">{elapsed !== null ? formatElapsed(elapsed) : '--:--'}</span>
-        </span>
+        <SessionClock session={session} />
         <button type="button" className="room-btn danger" onClick={() => void completeInterview()} disabled={completing}>
           {completing ? 'Completing…' : 'Complete interview'}
         </button>

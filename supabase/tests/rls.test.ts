@@ -9,6 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const schemaSql = readFileSync(join(here, '../migrations/20261009000000_schema.sql'), 'utf8')
 const workspaceSql = readFileSync(join(here, '../migrations/20261013000000_workspace.sql'), 'utf8')
 const aiModelSql = readFileSync(join(here, '../migrations/20261014000000_ai_message_model.sql'), 'utf8')
+const startedAtSql = readFileSync(join(here, '../migrations/20261015000000_session_started_at.sql'), 'utf8')
 const publicStartSql = readFileSync(join(here, '../migrations/20261012000000_public_start.sql'), 'utf8')
 
 const ALICE = { id: '00000000-0000-0000-0000-00000000000a', email: 'alice@example.com' }
@@ -70,6 +71,7 @@ beforeAll(async () => {
   await db.exec(publicStartSql)
   await db.exec(workspaceSql)
   await db.exec(aiModelSql)
+  await db.exec(startedAtSql)
   // Supabase grants service_role everything via default privileges; emulate.
   await db.exec('grant all on all tables in schema public to service_role')
   await db.exec(`
@@ -476,5 +478,68 @@ describe('(10) session_workspace + shared file editing', () => {
     await asUser(ALICE, `select * from set_phase($1, 'completed')`, [sid])
     expect(await asUser(ALICE, upd, [sid, 'late'])).toHaveLength(0)
     expect(await asUser(BOB, upd, [sid, 'late'])).toHaveLength(0)
+  })
+})
+
+describe('(8) sessions.started_at', () => {
+  const read = (u: User, sid: string) =>
+    asUser<{ started_at: string | null }>(u, `select started_at from sessions where id = $1`, [sid])
+
+  it('is null after the first claim, set by the second, and never changes afterwards', async () => {
+    const [s] = await asUser<any>(ALICE, `select * from create_session($1, 'interviewer', 'bob@example.com')`, [Q])
+    expect(s.started_at).toBeNull()
+    const [claimed] = await asUser<any>(BOB, `select * from claim_session($1)`, [s.id])
+    expect(claimed.started_at).not.toBeNull()
+    const first = (await read(ALICE, s.id))[0].started_at
+    // idempotent re-claims and phase changes keep it
+    await asUser(BOB, `select * from claim_session($1)`, [s.id])
+    await asUser(ALICE, `select * from claim_session($1)`, [s.id])
+    await asUser(ALICE, `select * from set_phase($1, 'debugging')`, [s.id])
+    await asUser(ALICE, `select * from set_phase($1, 'completed')`, [s.id])
+    expect(new Date((await read(BOB, s.id))[0].started_at!).getTime()).toBe(new Date(first!).getTime())
+  })
+
+  it('stays null while only the creator has joined', async () => {
+    const [s] = await asUser<any>(ALICE, `select * from create_session($1, 'interviewer', 'bob@example.com')`, [Q])
+    await asUser(ALICE, `select * from claim_session($1)`, [s.id])
+    expect((await read(ALICE, s.id))[0].started_at).toBeNull()
+  })
+
+  it('is set by the second claim when both slots are reserved server-side (no creator)', async () => {
+    const [s] = await as<any>(
+      'service_role',
+      null,
+      `insert into sessions (question_id, interviewer_email, interviewee_email) values ($1, 'alice@example.com', 'bob@example.com') returning *`,
+      [Q],
+    )
+    expect(s.started_at).toBeNull()
+    const [a] = await asUser<any>(ALICE, `select * from claim_session($1)`, [s.id])
+    expect(a.started_at).toBeNull()
+    const [b] = await asUser<any>(BOB, `select * from claim_session($1)`, [s.id])
+    expect(b.started_at).not.toBeNull()
+  })
+
+  it('set_phase fills started_at when a session skipped claim', async () => {
+    const [s] = await as<any>(
+      'service_role',
+      null,
+      `insert into sessions (question_id, interviewer_id, interviewee_id, interviewer_email, interviewee_email)
+       values ($1, $2, $3, 'alice@example.com', 'bob@example.com') returning *`,
+      [Q, ALICE.id, BOB.id],
+    )
+    expect(s.started_at).toBeNull()
+    const [d] = await asUser<any>(ALICE, `select * from set_phase($1, 'debugging')`, [s.id])
+    expect(d.started_at).not.toBeNull()
+  })
+
+  it('is readable by both participants, hidden from outsiders, and not writable by clients', async () => {
+    const sid = await newSession()
+    expect((await read(ALICE, sid))[0].started_at).not.toBeNull()
+    expect((await read(BOB, sid))[0].started_at).not.toBeNull()
+    expect(await read(CAROL, sid)).toHaveLength(0)
+    for (const u of [ALICE, BOB]) {
+      await expect(asUser(u, `update sessions set started_at = now() where id = $1`, [sid])).rejects.toThrow()
+    }
+    await expect(asUser(ALICE, `insert into sessions (question_id, created_by, interviewer_email, interviewee_email, started_at) values ($1, $2, 'a', 'b', now())`, [Q, ALICE.id])).rejects.toThrow()
   })
 })

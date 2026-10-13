@@ -67,6 +67,7 @@ export const TABLES: Record<string, TableDef> = {
       phase: () => 'briefing',
       interviewer_id: () => null,
       interviewee_id: () => null,
+      started_at: () => null,
       debugging_started_at: () => null,
       completed_at: () => null,
     },

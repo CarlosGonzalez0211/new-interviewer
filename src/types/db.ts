@@ -58,6 +58,8 @@ export interface Session {
   interviewee_email: string
   phase: SessionPhase
   created_at: string
+  /** When both participant slots were filled (the interview effectively began); null until then. */
+  started_at: string | null
   debugging_started_at: string | null
   completed_at: string | null
 }

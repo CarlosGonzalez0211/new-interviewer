@@ -5,6 +5,7 @@ import type { Question, QuestionPrivate, Role, Session } from '../types/db'
 import { collabUserFor } from '../workspace/logic'
 import StatusBadge from '../workspace/StatusBadge'
 import WorkspaceTabs from '../workspace/WorkspaceTabs'
+import SessionClock from './SessionClock'
 import { RichText } from './RichText'
 import { getQuestionPrivate } from './roomApi'
 import './room.css'
@@ -55,6 +56,7 @@ export default function BriefingView({ session, question, role }: { session: Ses
       <header>
         <h1 style={{ fontSize: 24 }}>{question.title}</h1>
         <p className="room-muted">Briefing &middot; {question.language}</p>
+        <SessionClock session={session} />
       </header>
 
       <div className="brief-grid">

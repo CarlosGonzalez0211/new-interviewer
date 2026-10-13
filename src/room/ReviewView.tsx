@@ -18,6 +18,8 @@ import {
   listTestRuns,
   upsertReview,
 } from './roomApi'
+import { readClock, timeToFirstRun, formatDuration } from './clock'
+import SessionClock from './SessionClock'
 import { formatClock, formatElapsed, elapsedSince } from './time'
 import { buildTimeline, countAiPrompts, weightedRubricScore } from './timeline'
 import './room.css'
@@ -177,7 +179,9 @@ export default function ReviewView({ session, question, role }: { session: Sessi
     [runs.items, ai.items, bugStatus.items, bugTitles, notes.items, isInterviewer],
   )
 
-  const total = session.completed_at ? elapsedSince(session.debugging_started_at, session.completed_at) : null
+  // Review is only shown once completed, so `now` is irrelevant (completed_at wins); 0 keeps the render pure.
+  const clock = readClock(session, 0)
+  const firstRun = timeToFirstRun(session, runs.items.map((r) => r.created_at))
   const lastRun = runs.items.length > 0 ? runs.items[runs.items.length - 1] : null
   const lastSummary = lastRun ? `${lastRun.passed}/${lastRun.passed + lastRun.failed + lastRun.errored} passed` : 'No runs'
   const bugFound = bugStatus.items.length
@@ -189,13 +193,28 @@ export default function ReviewView({ session, question, role }: { session: Sessi
       <header>
         <h1 style={{ fontSize: 24 }}>Review: {question.title}</h1>
         <p className="room-muted">Interview completed{session.completed_at ? ` ${new Date(session.completed_at).toLocaleString()}` : ''}</p>
+        <SessionClock session={session} />
       </header>
 
       <div className="room-stats">
         <div className="room-stat">
-          <strong>{total !== null ? formatElapsed(total) : '--:--'}</strong>
-          <span className="room-muted">Debugging time</span>
+          <strong>{clock.total !== null ? formatDuration(clock.total) : '--:--'}</strong>
+          <span className="room-muted">Total time</span>
         </div>
+        <div className="room-stat">
+          <strong>{clock.briefing !== null ? formatDuration(clock.briefing) : '--:--'}</strong>
+          <span className="room-muted">Briefing</span>
+        </div>
+        <div className="room-stat">
+          <strong>{clock.debugging !== null ? formatDuration(clock.debugging) : '--:--'}</strong>
+          <span className="room-muted">Debugging</span>
+        </div>
+        {firstRun !== null && (
+          <div className="room-stat">
+            <strong>{formatDuration(firstRun)}</strong>
+            <span className="room-muted">To first test run</span>
+          </div>
+        )}
         <div className="room-stat">
           <strong>{runs.items.length}</strong>
           <span className="room-muted">Test runs ({lastSummary})</span>

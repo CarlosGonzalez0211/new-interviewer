@@ -11,6 +11,7 @@ import TabPanels from '../workspace/TabPanels'
 import WhiteboardPanel from '../workspace/WhiteboardPanel'
 import ChatPanel from './ChatPanel'
 import { insertTestRun } from './roomApi'
+import SessionClock from './SessionClock'
 import TestResultsPanel from './TestResultsPanel'
 import './room.css'
 
@@ -86,6 +87,7 @@ export default function IntervieweeRoom({ session, userId }: { session: Session;
           </span>
         )}
         <span className="spacer" />
+        <SessionClock session={session} />
         <StatusBadge status={collab?.status ?? 'loading'} />
       </div>
 

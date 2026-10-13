@@ -36,6 +36,8 @@ export function createSandboxRuntime(
         created_by: SANDBOX_INTERVIEWER.id,
         interviewer_id: SANDBOX_INTERVIEWER.id,
         interviewee_id: SANDBOX_INTERVIEWEE.id,
+        // Both slots are filled at creation, so the interview clock starts now.
+        started_at: new Date().toISOString(),
         interviewer_email: SANDBOX_INTERVIEWER.email,
         interviewee_email: SANDBOX_INTERVIEWEE.email,
       }) as unknown as Session
