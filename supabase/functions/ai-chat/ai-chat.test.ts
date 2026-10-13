@@ -166,6 +166,7 @@ function makeDeps(over: { user?: string | null; session?: any; env?: any; gemini
     callGemini: callGemini as any,
     now: () => new Date("2026-01-01T00:00:00Z"),
     env: over.env ?? { GEMINI_API_KEY: "SECRET-KEY" },
+    sleep: async () => {},
   };
   return { deps, inserted, callGemini };
 }
@@ -242,6 +243,38 @@ describe("handler", () => {
       expect(await r.text()).not.toContain("SECRET-KEY");
       expect(inserted).toHaveLength(0);
     }
+  });
+  it("retries on 503 overload and succeeds without storing duplicates", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let n = 0;
+    const { deps, inserted, callGemini } = makeDeps({
+      gemini: async () =>
+        ++n < 2
+          ? { status: 503, json: { error: { message: "high demand" } } }
+          : { status: 200, json: { candidates: [{ content: { parts: [{ text: "ok after retry" }] } }] } },
+    });
+    const r = await handleChat(post(good), deps);
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as any).reply).toBe("ok after retry");
+    expect(callGemini).toHaveBeenCalledTimes(2);
+    expect(inserted).toHaveLength(2);
+    spy.mockRestore();
+  });
+  it("falls back to another model on the third attempt and reports the 503 when all fail", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { deps, callGemini } = makeDeps({
+      env: { GEMINI_API_KEY: "SECRET-KEY", GEMINI_MODEL: "primary-model", GEMINI_FALLBACK_MODEL: "fallback-model" },
+      gemini: async () => ({ status: 503, json: { error: { message: "high demand" } } }),
+    });
+    const r = await handleChat(post(good), deps);
+    expect(r.status).toBe(502);
+    expect(await r.text()).toContain("HTTP 503");
+    expect(callGemini).toHaveBeenCalledTimes(3);
+    const urls = callGemini.mock.calls.map((c: any[]) => c[0].url as string);
+    expect(urls[0]).toContain("primary-model");
+    expect(urls[1]).toContain("primary-model");
+    expect(urls[2]).toContain("fallback-model");
+    spy.mockRestore();
   });
   it("500 when key missing, without echoing anything secret", async () => {
     const { deps, callGemini } = makeDeps({ env: {} });

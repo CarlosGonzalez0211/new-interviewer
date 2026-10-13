@@ -38,7 +38,9 @@ export interface Deps {
   };
   callGemini(req: GeminiRequestInit): Promise<{ status: number; json: unknown }>;
   now(): Date;
-  env: { GEMINI_API_KEY?: string; GEMINI_MODEL?: string };
+  env: { GEMINI_API_KEY?: string; GEMINI_MODEL?: string; GEMINI_FALLBACK_MODEL?: string };
+  /** Pause between retries; injected so tests do not wait. */
+  sleep?(ms: number): Promise<void>;
 }
 
 function json(status: number, body: unknown): Response {
@@ -47,6 +49,8 @@ function json(status: number, body: unknown): Response {
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
 }
+
+const DEFAULT_FALLBACK_MODEL = "gemini-flash-latest";
 
 export async function handleChat(req: Request, deps: Deps): Promise<Response> {
   if (req.method === "OPTIONS") {
@@ -96,18 +100,34 @@ export async function handleChat(req: Request, deps: Deps): Promise<Response> {
     ]);
     if (!question) return json(404, { error: "Question not found." });
 
-    const geminiReq = buildGeminiRequest({
-      apiKey,
-      model: deps.env.GEMINI_MODEL,
-      systemInstruction: buildSystemInstruction(question, files),
-      history: trimHistory(history),
-      userMessage: message,
-    });
+    const buildReq = (model: string | undefined) =>
+      buildGeminiRequest({
+        apiKey,
+        model,
+        systemInstruction: buildSystemInstruction(question, files),
+        history: trimHistory(history),
+        userMessage: message,
+      });
 
-    let reply: string;
+    // Overload (HTTP 503) is usually brief: retry the primary model twice, then try a fallback model.
+    const fallback = deps.env.GEMINI_FALLBACK_MODEL?.trim() || DEFAULT_FALLBACK_MODEL;
+    const attempts: (string | undefined)[] = [deps.env.GEMINI_MODEL, deps.env.GEMINI_MODEL, fallback];
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+    let reply = "";
     try {
-      const res = await deps.callGemini(geminiReq);
-      reply = parseGeminiResponse(res.status, res.json);
+      for (let i = 0; i < attempts.length; i++) {
+        try {
+          const res = await deps.callGemini(buildReq(attempts[i]));
+          reply = parseGeminiResponse(res.status, res.json);
+          break;
+        } catch (err) {
+          const retryable = err instanceof GeminiError && err.kind === "overloaded";
+          if (!retryable || i === attempts.length - 1) throw err;
+          console.error(JSON.stringify({ event: "gemini_overloaded_retry", session_id, attempt: i + 1 }));
+          await sleep(i === 0 ? 800 : 1500);
+        }
+      }
     } catch (e) {
       if (e instanceof GeminiError && e.kind === "rate_limited") {
         return json(429, { error: "The AI service is busy. Please try again shortly." });

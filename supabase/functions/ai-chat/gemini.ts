@@ -48,7 +48,7 @@ export function buildGeminiRequest(args: {
   };
 }
 
-export type GeminiErrorKind = "rate_limited" | "blocked" | "empty" | "upstream";
+export type GeminiErrorKind = "rate_limited" | "overloaded" | "blocked" | "empty" | "upstream";
 
 export class GeminiError extends Error {
   kind: GeminiErrorKind;
@@ -62,6 +62,13 @@ export class GeminiError extends Error {
 /** Returns the reply text or throws GeminiError. */
 export function parseGeminiResponse(status: number, json: unknown): string {
   if (status === 429) throw new GeminiError("rate_limited", "Gemini rate limit exceeded");
+  if (status === 503) {
+    const m503 = (json as { error?: { message?: unknown } } | null)?.error?.message;
+    throw new GeminiError(
+      "overloaded",
+      `Gemini returned HTTP 503${typeof m503 === "string" ? `: ${m503.slice(0, 200)}` : ""}`,
+    );
+  }
   if (status < 200 || status >= 300) {
     const msg = (json as { error?: { message?: unknown } } | null)?.error?.message;
     const detail = typeof msg === "string" ? `: ${msg.slice(0, 200)}` : "";

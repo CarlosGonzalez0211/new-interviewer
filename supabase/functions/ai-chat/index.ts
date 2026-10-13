@@ -99,6 +99,7 @@ const deps: Deps = {
   env: {
     GEMINI_API_KEY: Deno.env.get("GEMINI_API_KEY") ?? undefined,
     GEMINI_MODEL: Deno.env.get("GEMINI_MODEL") ?? undefined,
+    GEMINI_FALLBACK_MODEL: Deno.env.get("GEMINI_FALLBACK_MODEL") ?? undefined,
   },
 };
 
