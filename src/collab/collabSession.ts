@@ -174,7 +174,7 @@ export async function startCollabSession(args: StartArgs): Promise<CollabHandle>
 
   // ---- realtime ----
   if (editable()) {
-    bus = sessionBus.acquire(sessionId)
+    bus = sessionBus.acquire(sessionId, user.id)
     sync = new DocSync({
       doc,
       awareness,

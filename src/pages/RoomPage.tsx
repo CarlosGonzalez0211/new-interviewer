@@ -65,7 +65,8 @@ export default function RoomPage() {
   const joined = !!session
   useEffect(() => {
     if (!id || !joined) return
-    const channel = supabase
+    const client = supabase // pinned: remove the channel from the client that created it
+    const channel = client
       .channel(`room-sessions:${id}`)
       .on(
         'postgres_changes',
@@ -76,7 +77,7 @@ export default function RoomPage() {
       )
       .subscribe()
     return () => {
-      void supabase.removeChannel(channel)
+      void client.removeChannel(channel)
     }
   }, [id, joined, refetch])
 

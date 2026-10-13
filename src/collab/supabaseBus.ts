@@ -16,24 +16,27 @@ export const COLLAB_EVENTS = [
 ] as const
 
 function connect(sessionId: string, cb: BusConnectionCallbacks): BusConnection {
+  // Pin the client for the life of this connection: close() must remove the channel from the client that created it,
+  // even if the active backend was swapped meanwhile (sandbox demo mode).
+  const client = supabase
   let cancelled = false
   let connected = false
   let channel: RealtimeChannel | null = null
 
   void (async () => {
     try {
-      await supabase.realtime.setAuth()
+      await client.realtime.setAuth()
     } catch {
       if (!cancelled) cb.onConnected(false)
       return
     }
     if (cancelled) return
     const topic = sessionChannelName(sessionId)
-    const stale = supabase.getChannels().find((c) => c.topic === `realtime:${topic}`)
-    if (stale) await supabase.removeChannel(stale)
+    const stale = client.getChannels().find((c) => c.topic === `realtime:${topic}`)
+    if (stale) await client.removeChannel(stale)
     if (cancelled) return
 
-    const ch = supabase.channel(topic, { config: { private: true, broadcast: { self: false } } })
+    const ch = client.channel(topic, { config: { private: true, broadcast: { self: false } } })
     for (const event of COLLAB_EVENTS) {
       ch.on('broadcast', { event }, ({ payload }) => cb.onEvent(event, payload))
     }
@@ -57,7 +60,7 @@ function connect(sessionId: string, cb: BusConnectionCallbacks): BusConnection {
     close() {
       cancelled = true
       connected = false
-      if (channel) void supabase.removeChannel(channel)
+      if (channel) void client.removeChannel(channel)
       channel = null
     },
   }

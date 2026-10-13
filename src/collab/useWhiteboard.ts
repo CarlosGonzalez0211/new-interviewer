@@ -257,7 +257,7 @@ export function useWhiteboard(session: { id: string; phase: SessionPhase }, user
         window.removeEventListener('beforeunload', hide)
       })
 
-      bus = sessionBus.acquire(sessionId)
+      bus = sessionBus.acquire(sessionId, selfId)
       cleanups.push(
         bus.onEvent((event, payload) => {
           if (!payload || typeof payload !== 'object') return

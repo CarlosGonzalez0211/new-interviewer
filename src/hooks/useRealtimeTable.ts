@@ -57,7 +57,8 @@ export function useRealtimeTable<T>(opts: RealtimeTableOptions<T>): RealtimeTabl
     }
 
     const name = `rt:${table}:${sessionId}:${++channelCounter}`
-    const channel = supabase
+    const client = supabase // pinned: remove the channel from the client that created it
+    const channel = client
       .channel(name)
       .on(
         'postgres_changes',
@@ -109,7 +110,7 @@ export function useRealtimeTable<T>(opts: RealtimeTableOptions<T>): RealtimeTabl
     return () => {
       cancelled = true
       localOps.current = null
-      void supabase.removeChannel(channel)
+      void client.removeChannel(channel)
     }
   }, [table, sessionId])
 

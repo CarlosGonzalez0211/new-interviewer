@@ -40,8 +40,13 @@ interface Entry {
 export function createBusRegistry(factory: BusConnectionFactory, graceMs = 30) {
   const entries = new Map<string, Entry>()
 
-  function acquire(sessionId: string): BusHandle {
-    let entry = entries.get(sessionId)
+  /**
+   * `scope` separates connections for the same session inside one JS context (the sandbox runs interviewer and
+   * interviewee side by side). The real app always has one user per page, so the scope never changes anything.
+   */
+  function acquire(sessionId: string, scope = ''): BusHandle {
+    const key = scope ? `${scope}|${sessionId}` : sessionId
+    let entry = entries.get(key)
     if (!entry) {
       const created: Entry = {
         conn: undefined as unknown as BusConnection,
@@ -60,7 +65,7 @@ export function createBusRegistry(factory: BusConnectionFactory, graceMs = 30) {
           for (const h of [...created.statuses]) h(c)
         },
       })
-      entries.set(sessionId, created)
+      entries.set(key, created)
       entry = created
     }
     const e = entry
@@ -104,7 +109,7 @@ export function createBusRegistry(factory: BusConnectionFactory, graceMs = 30) {
           e.closeTimer = setTimeout(() => {
             if (e.refs > 0) return
             e.conn.close()
-            if (entries.get(sessionId) === e) entries.delete(sessionId)
+            if (entries.get(key) === e) entries.delete(key)
           }, graceMs)
         }
       },
