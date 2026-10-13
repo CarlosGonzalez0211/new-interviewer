@@ -1,7 +1,7 @@
 /** Browser-only sandbox settings. The Gemini key lives in localStorage and is sent only to Google. */
 export const GEMINI_KEY_STORAGE = 'sandbox.geminiKey'
 export const GEMINI_MODEL_STORAGE = 'sandbox.geminiModel'
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash'
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash'
 
 export interface AiSettings {
   apiKey: string | null

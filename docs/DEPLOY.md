@@ -4,7 +4,7 @@
 1. Create a new project (Dashboard, New project). Note the **Project URL** and the **anon / publishable key** (Project Settings, API).
 2. Database: run every file in `supabase/migrations/` in order, then `supabase/seed.sql`, in the SQL editor. With the CLI: `supabase link --project-ref <ref>` and `supabase db push`, then run the seed.
 3. Edge functions: `supabase functions deploy ai-chat --project-ref <ref>` and `supabase functions deploy create-interview --no-verify-jwt --project-ref <ref>`. `create-interview` is called by visitors who are not signed in, so `--no-verify-jwt` is required (it applies its own validation and rate limiting).
-4. Secrets: `supabase secrets set GEMINI_API_KEY=<key> --project-ref <ref>` (optionally `GEMINI_MODEL=gemini-2.5-flash`). Optionally `supabase secrets set SITE_URL=https://<your-app>.vercel.app --project-ref <ref>` so magic links redirect to the public app URL. The key is never put in Vercel or in the repository.
+4. Secrets: `supabase secrets set GEMINI_API_KEY=<key> --project-ref <ref>` (optionally `GEMINI_MODEL=gemini-3.8-flash`). Optionally `supabase secrets set SITE_URL=https://<your-app>.vercel.app --project-ref <ref>` so magic links redirect to the public app URL. The key is never put in Vercel or in the repository.
 5. Realtime: confirm the tables listed in `docs/ARCHITECTURE.md` are in the `supabase_realtime` publication (the migration does this). Broadcast uses private channels, which require the `realtime.messages` policy from the migration.
 
 ## 2. Vercel

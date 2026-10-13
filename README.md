@@ -22,7 +22,7 @@ Stack: Vite, React 19, TypeScript, react-router, Supabase (magic-link Auth, Post
    - `ai-chat`: `supabase functions deploy ai-chat`
    - `create-interview` (called by anonymous visitors, so it must skip JWT verification): `supabase functions deploy create-interview --no-verify-jwt`
    - `GEMINI_API_KEY` (required)
-   - `GEMINI_MODEL` (optional, default `gemini-2.5-flash`)
+   - `GEMINI_MODEL` (optional, default `gemini-3.8-flash`)
    - `SITE_URL` (optional, the public app URL used for magic-link redirects, e.g. `https://<your-app>.vercel.app`)
 4. Authentication, URL Configuration: set **Site URL** to your deployed URL and add redirect URLs for `http://localhost:5173/**` and `https://<your-app>.vercel.app/**`.
 5. Supabase's built-in mailer is limited to a few emails per hour. Configure custom SMTP if that gets in the way. When a magic-link email fails (including rate limits), the app still shows a direct link you can share.

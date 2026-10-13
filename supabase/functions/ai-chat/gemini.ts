@@ -1,7 +1,7 @@
 // Gemini REST request/response mapping. No Deno globals.
 import type { HistoryMessage } from "./prompt.ts";
 
-export const DEFAULT_MODEL = "gemini-2.5-flash";
+export const DEFAULT_MODEL = "gemini-3.8-flash";
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export interface GeminiRequestInit {

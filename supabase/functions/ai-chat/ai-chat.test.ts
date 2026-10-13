@@ -106,7 +106,7 @@ describe("gemini request", () => {
       history: [{ role: "user", content: "a" }],
       userMessage: "b",
     });
-    expect(r.url).toContain("/models/gemini-2.5-flash:generateContent");
+    expect(r.url).toContain("/models/gemini-3.8-flash:generateContent");
     const body = JSON.parse(r.init.body);
     expect(body.contents).toHaveLength(1);
     expect(body.contents[0].parts[0].text).toBe("a\n\nb");
