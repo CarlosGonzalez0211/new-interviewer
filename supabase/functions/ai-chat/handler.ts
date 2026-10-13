@@ -50,7 +50,9 @@ function json(status: number, body: unknown): Response {
   });
 }
 
-const DEFAULT_FALLBACK_MODEL = "gemini-flash-latest";
+const DEFAULT_FALLBACK_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"];
+/** Statuses where trying again or switching model can help (overload, per-model quota, retired model, server error). */
+const RETRYABLE_STATUSES = new Set([404, 429, 500, 503]);
 
 export async function handleChat(req: Request, deps: Deps): Promise<Response> {
   if (req.method === "OPTIONS") {
@@ -109,9 +111,17 @@ export async function handleChat(req: Request, deps: Deps): Promise<Response> {
         userMessage: message,
       });
 
-    // Overload (HTTP 503) is usually brief: retry the primary model twice, then try a fallback model.
-    const fallback = deps.env.GEMINI_FALLBACK_MODEL?.trim() || DEFAULT_FALLBACK_MODEL;
-    const attempts: (string | undefined)[] = [deps.env.GEMINI_MODEL, deps.env.GEMINI_MODEL, fallback];
+    // Overload, per-model quota, retired model and server errors are often transient or model-specific:
+    // retry the primary model once (after a pause), then walk a chain of fallback models.
+    const fallbacks = (deps.env.GEMINI_FALLBACK_MODEL ?? "")
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
+    const attempts: (string | undefined)[] = [
+      deps.env.GEMINI_MODEL,
+      deps.env.GEMINI_MODEL,
+      ...(fallbacks.length ? fallbacks : DEFAULT_FALLBACK_MODELS),
+    ];
     const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
     let reply = "";
@@ -122,10 +132,17 @@ export async function handleChat(req: Request, deps: Deps): Promise<Response> {
           reply = parseGeminiResponse(res.status, res.json);
           break;
         } catch (err) {
-          const retryable = err instanceof GeminiError && err.kind === "overloaded";
+          const retryable =
+            err instanceof GeminiError &&
+            (err.kind === "overloaded" ||
+              err.kind === "rate_limited" ||
+              (err.status !== undefined && RETRYABLE_STATUSES.has(err.status)));
           if (!retryable || i === attempts.length - 1) throw err;
-          console.error(JSON.stringify({ event: "gemini_overloaded_retry", session_id, attempt: i + 1 }));
-          await sleep(i === 0 ? 800 : 1500);
+          console.error(
+            JSON.stringify({ event: "gemini_retry", session_id, attempt: i + 1, model: attempts[i], detail: (err as Error).message }),
+          );
+          // Same model again (i === 0): pause. Switching to a different model: go straight on.
+          if (i === 0) await sleep(800);
         }
       }
     } catch (e) {

@@ -42,7 +42,7 @@ export function buildGeminiRequest(args: {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: args.systemInstruction }] },
         contents: merged,
-        generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+        generationConfig: { temperature: 0.2, maxOutputTokens: 1500 },
       }),
     },
   };
@@ -52,27 +52,30 @@ export type GeminiErrorKind = "rate_limited" | "overloaded" | "blocked" | "empty
 
 export class GeminiError extends Error {
   kind: GeminiErrorKind;
-  constructor(kind: GeminiErrorKind, message: string) {
+  status?: number;
+  constructor(kind: GeminiErrorKind, message: string, status?: number) {
     super(message);
     this.name = "GeminiError";
     this.kind = kind;
+    this.status = status;
   }
 }
 
 /** Returns the reply text or throws GeminiError. */
 export function parseGeminiResponse(status: number, json: unknown): string {
-  if (status === 429) throw new GeminiError("rate_limited", "Gemini rate limit exceeded");
+  if (status === 429) throw new GeminiError("rate_limited", "Gemini rate limit exceeded", 429);
   if (status === 503) {
     const m503 = (json as { error?: { message?: unknown } } | null)?.error?.message;
     throw new GeminiError(
       "overloaded",
       `Gemini returned HTTP 503${typeof m503 === "string" ? `: ${m503.slice(0, 200)}` : ""}`,
+      503,
     );
   }
   if (status < 200 || status >= 300) {
     const msg = (json as { error?: { message?: unknown } } | null)?.error?.message;
     const detail = typeof msg === "string" ? `: ${msg.slice(0, 200)}` : "";
-    throw new GeminiError("upstream", `Gemini returned HTTP ${status}${detail}`);
+    throw new GeminiError("upstream", `Gemini returned HTTP ${status}${detail}`, status);
   }
   // deno-lint-ignore no-explicit-any
   const data = (json ?? {}) as any;

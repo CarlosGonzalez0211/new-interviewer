@@ -48,7 +48,14 @@ describe("prompt", () => {
     const s = buildSystemInstruction(q, files);
     expect(s).toMatch(/no knowledge of any hidden reference solution/);
     expect(s).toMatch(/concise/i);
-    expect(s).toMatch(/write or fix code/);
+  });
+  it("restricts the assistant to the exercise and to guidance instead of full solutions", () => {
+    const s = buildSystemInstruction(q, files);
+    expect(s).toMatch(/only about THIS exercise/);
+    expect(s).toMatch(/unrelated to this exercise/);
+    expect(s).toMatch(/Do not hand over the complete corrected code/);
+    expect(s).toMatch(/cannot tell from what you can see/);
+    expect(s).toMatch(/cannot run code/);
   });
   it("formats files deterministically", () => {
     expect(formatCodeContext([])).toBe("(no files)");
@@ -274,6 +281,33 @@ describe("handler", () => {
     expect(urls[0]).toContain("primary-model");
     expect(urls[1]).toContain("primary-model");
     expect(urls[2]).toContain("fallback-model");
+    spy.mockRestore();
+  });
+  it("switches to the next model when the primary model is retired (404)", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let n = 0;
+    const { deps, callGemini } = makeDeps({
+      env: { GEMINI_API_KEY: "SECRET-KEY", GEMINI_MODEL: "old-model", GEMINI_FALLBACK_MODEL: "new-a,new-b" },
+      gemini: async () =>
+        ++n < 3
+          ? { status: 404, json: { error: { message: "model is no longer available" } } }
+          : { status: 200, json: { candidates: [{ content: { parts: [{ text: "from fallback" }] } }] } },
+    });
+    const r = await handleChat(post(good), deps);
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as any).reply).toBe("from fallback");
+    const urls = callGemini.mock.calls.map((c: any[]) => c[0].url as string);
+    expect(urls[2]).toContain("new-a");
+    spy.mockRestore();
+  });
+  it("does not retry on an invalid key (400/403)", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { deps, callGemini } = makeDeps({
+      gemini: async () => ({ status: 400, json: { error: { message: "API key not valid" } } }),
+    });
+    const r = await handleChat(post(good), deps);
+    expect(r.status).toBe(502);
+    expect(callGemini).toHaveBeenCalledTimes(1);
     spy.mockRestore();
   });
   it("500 when key missing, without echoing anything secret", async () => {
