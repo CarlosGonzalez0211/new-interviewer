@@ -6,7 +6,6 @@ import type {
   QuestionBug,
   QuestionPrivate,
   QuestionReferenceFile,
-  SessionFile,
   SessionNote,
   SessionReview,
   TestRun,
@@ -16,41 +15,6 @@ import type { TestRunResult } from '../runner/types'
 
 function fail(action: string, error: { message?: string } | null | undefined): never {
   throw new Error(`${action}: ${error?.message ?? 'unknown error'}`)
-}
-
-export async function loadSessionFiles(sessionId: string): Promise<SessionFile[]> {
-  const { data, error } = await supabase.from('session_files').select('*').eq('session_id', sessionId).order('path')
-  if (error) fail('Could not load the session files', error)
-  return (data ?? []) as SessionFile[]
-}
-
-export async function updateSessionFile(sessionId: string, path: string, content: string): Promise<void> {
-  const { error } = await supabase
-    .from('session_files')
-    .update({ content })
-    .eq('session_id', sessionId)
-    .eq('path', path)
-  if (error) fail(`Could not save ${path}`, error)
-}
-
-/**
- * Last-chance save while the page is closing: a plain fetch with keepalive survives unload,
- * which an in-flight supabase-js request may not. Fire-and-forget.
- */
-export function saveFileKeepalive(sessionId: string, path: string, content: string, accessToken: string): void {
-  const base = import.meta.env.VITE_SUPABASE_URL as string
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string
-  const url = `${base}/rest/v1/session_files?session_id=eq.${encodeURIComponent(sessionId)}&path=eq.${encodeURIComponent(path)}`
-  try {
-    void fetch(url, {
-      method: 'PATCH',
-      keepalive: true,
-      headers: { apikey: key, Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    }).catch(() => undefined)
-  } catch {
-    // Body over the keepalive limit or similar: nothing more we can do.
-  }
 }
 
 export async function insertTestRun(sessionId: string, result: TestRunResult): Promise<TestRun> {

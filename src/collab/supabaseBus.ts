@@ -1,0 +1,67 @@
+import type { RealtimeChannel } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
+import { sessionChannelName } from '../types/realtime'
+import { createBusRegistry } from './bus'
+import type { BusConnection, BusConnectionCallbacks } from './bus'
+
+export const COLLAB_EVENTS = [
+  'y_update',
+  'y_sync_request',
+  'y_sync_reply',
+  'y_awareness',
+  'wb_update',
+  'wb_pointer',
+  'wb_sync_request',
+  'wb_sync_reply',
+] as const
+
+function connect(sessionId: string, cb: BusConnectionCallbacks): BusConnection {
+  let cancelled = false
+  let connected = false
+  let channel: RealtimeChannel | null = null
+
+  void (async () => {
+    try {
+      await supabase.realtime.setAuth()
+    } catch {
+      if (!cancelled) cb.onConnected(false)
+      return
+    }
+    if (cancelled) return
+    const topic = sessionChannelName(sessionId)
+    const stale = supabase.getChannels().find((c) => c.topic === `realtime:${topic}`)
+    if (stale) await supabase.removeChannel(stale)
+    if (cancelled) return
+
+    const ch = supabase.channel(topic, { config: { private: true, broadcast: { self: false } } })
+    for (const event of COLLAB_EVENTS) {
+      ch.on('broadcast', { event }, ({ payload }) => cb.onEvent(event, payload))
+    }
+    ch.subscribe((s) => {
+      if (cancelled) return
+      const now = s === 'SUBSCRIBED'
+      if (now !== connected) {
+        connected = now
+        cb.onConnected(now)
+      }
+    })
+    channel = ch
+  })()
+
+  return {
+    send(event, payload) {
+      if (!channel || !connected) return false
+      void channel.send({ type: 'broadcast', event, payload })
+      return true
+    },
+    close() {
+      cancelled = true
+      connected = false
+      if (channel) void supabase.removeChannel(channel)
+      channel = null
+    },
+  }
+}
+
+/** Process-wide registry: one Supabase channel per session shared by useCollab and useWhiteboard. */
+export const sessionBus = createBusRegistry(connect)

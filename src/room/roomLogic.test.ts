@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { AiMessage, BugStatus, TestRun } from '../types/db'
 import { mergeMessages, reconcilePending } from './chatState'
 import { applyChange, mergeLoaded } from './listUtils'
-import { parseActiveFile, parseCursor, parseFileEdit, parseSyncRequest } from './protocol'
 import { elapsedSince, formatElapsed } from './time'
 import { buildTimeline, countAiPrompts, weightedRubricScore } from './timeline'
 import { allPassing, parseHarnessOutput, summarizeResults, timeoutResult } from '../runner/summary'
@@ -81,18 +80,6 @@ describe('chatState', () => {
     ]
     const real = [msg('1', 'user', 'hi', '2024-01-01T00:00:01Z'), msg('2', 'model', 'hi', '2024-01-01T00:00:02Z')]
     expect(reconcilePending(pending, real).map((p) => p.localId)).toEqual(['l2'])
-  })
-})
-
-describe('protocol', () => {
-  it('validates payloads', () => {
-    expect(parseFileEdit({ path: 'a', content: 'b', seq: 1, from: 'u' })).not.toBeNull()
-    expect(parseFileEdit({ path: 'a', content: 1, seq: 1, from: 'u' })).toBeNull()
-    expect(parseFileEdit(null)).toBeNull()
-    expect(parseActiveFile({ path: 'a', from: 'u' })).toEqual({ path: 'a', from: 'u' })
-    expect(parseSyncRequest({})).toBeNull()
-    expect(parseCursor({ path: 'a', line: 1, column: 2, from: 'u', selection: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 3 } })?.selection?.endColumn).toBe(3)
-    expect(parseCursor({ path: 'a', line: 1, column: 2, from: 'u', selection: { startLine: 'x' } })?.selection).toBeUndefined()
   })
 })
 

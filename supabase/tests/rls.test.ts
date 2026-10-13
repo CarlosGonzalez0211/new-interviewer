@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const schemaSql = readFileSync(join(here, '../migrations/20261009000000_schema.sql'), 'utf8')
+const workspaceSql = readFileSync(join(here, '../migrations/20261013000000_workspace.sql'), 'utf8')
 const publicStartSql = readFileSync(join(here, '../migrations/20261012000000_public_start.sql'), 'utf8')
 
 const ALICE = { id: '00000000-0000-0000-0000-00000000000a', email: 'alice@example.com' }
@@ -66,6 +67,7 @@ beforeAll(async () => {
   `)
   await db.exec(schemaSql)
   await db.exec(publicStartSql)
+  await db.exec(workspaceSql)
   // Supabase grants service_role everything via default privileges; emulate.
   await db.exec('grant all on all tables in schema public to service_role')
   await db.exec(`
@@ -244,9 +246,10 @@ describe('(6) session_files writes', () => {
     const [f] = (await db.query<any>(`select content from session_files where session_id = $1 and path = 'f.py'`, [foreign.id])).rows
     expect(f.content).toBe('orig')
 
-    // interviewer cannot edit, no insert/delete/path change for anyone
-    r = await asUser(ALICE, `update session_files set content = 'hack' where session_id = $1 returning path`, [sid])
-    expect(r).toHaveLength(0)
+    // interviewer may now edit content in debugging (intentional change: workspace migration)
+    r = await asUser(ALICE, `update session_files set content = 'explained' where session_id = $1 and path = 'raffle.py' returning path`, [sid])
+    expect(r).toHaveLength(1)
+    // no insert/delete/path change for anyone
     await expect(asUser(BOB, `insert into session_files (session_id, path, content, kind) values ($1, 'n.py', 'x', 'code')`, [sid])).rejects.toThrow()
     await expect(asUser(BOB, `delete from session_files where session_id = $1`, [sid])).rejects.toThrow()
     await expect(asUser(BOB, `update session_files set path = 'z.py' where session_id = $1`, [sid])).rejects.toThrow()
@@ -288,7 +291,7 @@ describe('(8) anon', () => {
   it('can read only questions and call nothing', async () => {
     const tables = [
       'question_private', 'question_files', 'question_reference_files', 'question_bugs',
-      'sessions', 'session_files', 'test_runs', 'ai_messages', 'bug_status', 'session_notes', 'session_reviews',
+      'sessions', 'session_files', 'test_runs', 'ai_messages', 'bug_status', 'session_notes', 'session_reviews', 'session_workspace',
     ]
     for (const t of tables) {
       await expect(as('anon', null, `select * from ${t}`), t).rejects.toThrow(/permission denied/)
@@ -370,5 +373,84 @@ describe('(9) public start: anon questions + service-created sessions', () => {
     expect(await asUser(BOB, `select * from sessions where id = $1`, [s.id])).toHaveLength(1)
     // Bob (interviewee) still cannot reach private tables before the interviewer claims
     for (const t of PRIVATE_TABLES) expect(await asUser(BOB, `select * from ${t}`), t).toHaveLength(0)
+  })
+})
+
+describe('(10) session_workspace + shared file editing', () => {
+  const upsert = `insert into session_workspace (session_id, notes, yjs_state, whiteboard) values ($1, $2, 'AAA', '{"elements":[]}')
+    on conflict (session_id) do update set notes = excluded.notes, yjs_state = excluded.yjs_state, whiteboard = excluded.whiteboard`
+
+  for (const phase of ['briefing', 'debugging'] as const) {
+    it(`both participants read/write the workspace in ${phase}; third user and anon cannot`, async () => {
+      const sid = await newSession()
+      if (phase === 'debugging') await asUser(ALICE, `select * from set_phase($1, 'debugging')`, [sid])
+
+      await asUser(BOB, upsert, [sid, 'bob notes'])
+      expect(await asUser(ALICE, `select notes from session_workspace where session_id = $1`, [sid])).toEqual([{ notes: 'bob notes' }])
+      await asUser(ALICE, upsert, [sid, 'alice notes'])
+      await asUser(BOB, `update session_workspace set notes = 'bob again', whiteboard = '{"elements":[1]}' where session_id = $1`, [sid])
+      const rows = await asUser<any>(ALICE, `select notes, whiteboard, yjs_state from session_workspace where session_id = $1`, [sid])
+      expect(rows).toHaveLength(1)
+      expect(rows[0].notes).toBe('bob again')
+      expect(rows[0].yjs_state).toBe('AAA')
+
+      expect(await asUser(CAROL, `select * from session_workspace`)).toHaveLength(0)
+      await expect(asUser(CAROL, upsert, [sid, 'evil'])).rejects.toThrow()
+      expect(await asUser(CAROL, `update session_workspace set notes = 'evil' where session_id = $1 returning session_id`, [sid])).toHaveLength(0)
+      await expect(asUser(ALICE, `delete from session_workspace where session_id = $1`, [sid])).rejects.toThrow(/permission denied/)
+      await expect(asUser(BOB, `delete from session_workspace where session_id = $1`, [sid])).rejects.toThrow(/permission denied/)
+      await expect(as('anon', null, `select * from session_workspace`)).rejects.toThrow(/permission denied/)
+      await expect(as('anon', null, `insert into session_workspace (session_id) values ($1)`, [sid])).rejects.toThrow(/permission denied/)
+    })
+  }
+
+  it('updated_at is maintained by trigger and not client-writable; session_id is immutable', async () => {
+    const sid = await newSession()
+    await asUser(BOB, `insert into session_workspace (session_id, notes) values ($1, 'a')`, [sid])
+    const t0 = (await db.query<any>(`select updated_at from session_workspace where session_id = $1`, [sid])).rows[0].updated_at
+    await new Promise((r) => setTimeout(r, 15))
+    await asUser(ALICE, `update session_workspace set notes = 'b' where session_id = $1`, [sid])
+    const t1 = (await db.query<any>(`select updated_at from session_workspace where session_id = $1`, [sid])).rows[0].updated_at
+    expect(new Date(t1).getTime()).toBeGreaterThan(new Date(t0).getTime())
+    await expect(asUser(ALICE, `update session_workspace set updated_at = now() where session_id = $1`, [sid])).rejects.toThrow(/permission denied/)
+    await expect(asUser(ALICE, `update session_workspace set session_id = $2 where session_id = $1`, [sid, Q])).rejects.toThrow(/permission denied/)
+  })
+
+  it('no inserts or updates after completed; reads still allowed', async () => {
+    const sid = await newSession()
+    await asUser(BOB, `insert into session_workspace (session_id, notes) values ($1, 'final')`, [sid])
+    await asUser(ALICE, `select * from set_phase($1, 'debugging')`, [sid])
+    await asUser(ALICE, `select * from set_phase($1, 'completed')`, [sid])
+    for (const u of [ALICE, BOB]) {
+      expect(await asUser(u, `update session_workspace set notes = 'late' where session_id = $1 returning session_id`, [sid])).toHaveLength(0)
+      expect(await asUser(u, `select notes from session_workspace where session_id = $1`, [sid])).toEqual([{ notes: 'final' }])
+    }
+    const sid2 = await newSession()
+    await asUser(ALICE, `select * from set_phase($1, 'debugging')`, [sid2])
+    await asUser(ALICE, `select * from set_phase($1, 'completed')`, [sid2])
+    await expect(asUser(BOB, `insert into session_workspace (session_id, notes) values ($1, 'x')`, [sid2])).rejects.toThrow()
+    await expect(asUser(ALICE, upsert, [sid2, 'x'])).rejects.toThrow()
+  })
+
+  it('interviewer updates session_files.content only in debugging; third user never', async () => {
+    const sid = await newSession()
+    const upd = `update session_files set content = $2 where session_id = $1 and path = 'raffle.py' returning path`
+    await db.query(`insert into session_files (session_id, path, content, kind) values ($1, 'raffle.py', 'orig', 'code')`, [sid])
+    expect(await asUser(ALICE, upd, [sid, 'a'])).toHaveLength(0)
+    expect(await asUser(BOB, upd, [sid, 'b'])).toHaveLength(0)
+
+    // set_phase does not overwrite the pre-existing row (on conflict do nothing)
+    await asUser(ALICE, `select * from set_phase($1, 'debugging')`, [sid])
+    expect(await asUser(ALICE, upd, [sid, 'by alice'])).toHaveLength(1)
+    expect(await asUser(BOB, upd, [sid, 'by bob'])).toHaveLength(1)
+    expect(await asUser(CAROL, upd, [sid, 'by carol'])).toHaveLength(0)
+    const [row] = (await db.query<any>(`select content from session_files where session_id = $1 and path = 'raffle.py'`, [sid])).rows
+    expect(row.content).toBe('by bob')
+    await expect(asUser(ALICE, `update session_files set path = 'z.py' where session_id = $1`, [sid])).rejects.toThrow()
+    await expect(asUser(ALICE, `update session_files set kind = 'test' where session_id = $1`, [sid])).rejects.toThrow()
+
+    await asUser(ALICE, `select * from set_phase($1, 'completed')`, [sid])
+    expect(await asUser(ALICE, upd, [sid, 'late'])).toHaveLength(0)
+    expect(await asUser(BOB, upd, [sid, 'late'])).toHaveLength(0)
   })
 })

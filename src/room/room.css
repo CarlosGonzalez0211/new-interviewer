@@ -89,11 +89,6 @@ textarea.room-input { resize: vertical; min-height: 60px; }
 .room-editor { flex: 1; min-height: 320px; border: 1px solid var(--rm-border); border-radius: 6px; overflow: hidden; }
 .room-editor-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
 
-/* Remote cursor decorations (Monaco renders outside React, so these are global class names). */
-.room-remote-caret::before { content: ''; border-left: 2px solid #f97316; margin-left: -1px; }
-.room-remote-selection { background: rgba(249, 115, 22, 0.25); }
-.room-remote-line { background: rgba(249, 115, 22, 0.08); }
-
 /* Test results */
 .room-results { display: flex; flex-direction: column; gap: 6px; }
 .room-result { border: 1px solid var(--rm-border); border-radius: 6px; padding: 6px 10px; }
@@ -149,3 +144,26 @@ textarea.room-input { resize: vertical; min-height: 60px; }
 
 .room-field { display: flex; flex-direction: column; gap: 4px; }
 .room-narrow { max-width: 820px; width: 100%; margin: 0 auto; }
+
+/* ---- Collaborative workspace (src/workspace) ---- */
+.room-wide { max-width: 1400px; width: 100%; margin: 0 auto; }
+.brief-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 12px; align-items: start; }
+.brief-workspace { height: calc(100vh - 220px); min-height: 480px; }
+.review-workspace { height: 460px; display: flex; flex-direction: column; min-height: 0; }
+@media (max-width: 1000px) {
+  .brief-grid { grid-template-columns: minmax(0, 1fr); }
+  .brief-workspace { height: 70vh; }
+}
+
+.ws-tabs { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
+.ws-fill { flex: 1; min-height: 0; }
+.ws-tabpanel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.ws-tabpanel[hidden] { display: none; }
+.ws-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 6px; }
+.ws-panel .ws-fill.room-editor { min-height: 240px; }
+.ws-scroll { overflow: auto; }
+.ws-hint { margin: 0; }
+.ws-board { position: relative; flex: 1; min-height: 360px; border: 1px solid var(--rm-border); border-radius: 6px; overflow: hidden; }
+.ws-board .excalidraw { height: 100%; }
+.ws-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; padding: 12px; text-align: center; }
+.ws-tabpanel > .room-editor-wrap > .room-editor { min-height: 240px; }

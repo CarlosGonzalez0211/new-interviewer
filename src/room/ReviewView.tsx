@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { useCollab } from '../collab'
 import { useRealtimeTable } from '../hooks/useRealtimeTable'
 import type { AiMessage, BugStatus, Question, QuestionBug, QuestionPrivate, Role, Session, SessionNote, SessionReview, TestRun } from '../types/db'
+import { collabUserFor } from '../workspace/logic'
+import WorkspaceTabs from '../workspace/WorkspaceTabs'
 import { MessageBubble } from './ChatPanel'
 import { sortByCreatedAt } from './listUtils'
 import {
@@ -117,6 +120,12 @@ function ReviewForm({ sessionId, rubric, review }: { sessionId: string; rubric: 
 export default function ReviewView({ session, question, role }: { session: Session; question: Question; role: Role }) {
   const sessionId = session.id
   const isInterviewer = role === 'interviewer'
+
+  const email = isInterviewer ? session.interviewer_email : session.interviewee_email
+  const userId = (isInterviewer ? session.interviewer_id : session.interviewee_id) ?? role
+  const user = useMemo(() => collabUserFor({ userId, role, email }), [userId, role, email])
+  const collabSession = useMemo(() => ({ id: session.id, phase: session.phase }), [session.id, session.phase])
+  const { collab, error: collabError } = useCollab(collabSession, user)
 
   const loadRuns = useCallback(() => listTestRuns(sessionId), [sessionId])
   const runs = useRealtimeTable<TestRun>({ table: 'test_runs', sessionId, load: loadRuns, keyOf: runKey, sort: sortByCreatedAt })
@@ -249,6 +258,13 @@ export default function ReviewView({ session, question, role }: { session: Sessi
           </ul>
         </section>
       )}
+
+      <section className="room-card" aria-labelledby="review-workspace">
+        <h2 id="review-workspace">Notes and whiteboard (read-only)</h2>
+        <div className="review-workspace">
+          <WorkspaceTabs collab={collab} session={collabSession} user={user} readOnly renderedNotes error={collabError} />
+        </div>
+      </section>
 
       <section className="room-card" aria-labelledby="timeline">
         <h2 id="timeline">Timeline</h2>
