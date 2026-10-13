@@ -63,7 +63,9 @@ export class GeminiError extends Error {
 export function parseGeminiResponse(status: number, json: unknown): string {
   if (status === 429) throw new GeminiError("rate_limited", "Gemini rate limit exceeded");
   if (status < 200 || status >= 300) {
-    throw new GeminiError("upstream", `Gemini returned HTTP ${status}`);
+    const msg = (json as { error?: { message?: unknown } } | null)?.error?.message;
+    const detail = typeof msg === "string" ? `: ${msg.slice(0, 200)}` : "";
+    throw new GeminiError("upstream", `Gemini returned HTTP ${status}${detail}`);
   }
   // deno-lint-ignore no-explicit-any
   const data = (json ?? {}) as any;

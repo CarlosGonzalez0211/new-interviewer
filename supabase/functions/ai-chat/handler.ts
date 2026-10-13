@@ -112,8 +112,12 @@ export async function handleChat(req: Request, deps: Deps): Promise<Response> {
       if (e instanceof GeminiError && e.kind === "rate_limited") {
         return json(429, { error: "The AI service is busy. Please try again shortly." });
       }
-      console.error("ai-chat upstream failure:", e instanceof Error ? e.message : "unknown");
-      return json(502, { error: "The AI service is unavailable. Please try again." });
+      const internal = e instanceof Error ? e.message.slice(0, 240) : "unknown";
+      // Visible in Supabase Dashboard > Edge Functions > ai-chat > Logs.
+      console.error(JSON.stringify({ event: "gemini_failed", session_id, detail: internal }));
+      // Only Gemini's own error text (HTTP status + its message) is shown; anything else stays generic.
+      const shown = e instanceof GeminiError ? e.message : "could not reach the AI service";
+      return json(502, { error: `The AI service is unavailable (${shown}).` });
     }
 
     await deps.data.insertMessage(session_id, "user", message);
